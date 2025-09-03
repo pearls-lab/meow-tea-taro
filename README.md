@@ -1,1 +1,1 @@
-# Meow-ti TARO: A Practitioner's Guide to <u>M</u>ul<u>ti</u> <u>T</u>urn <u>A</u>gentic <u>R</u>einf<u>O</u>rcement Learning
+# Meow-ti TARO: A Practitioner's Guide to <ins>M</ins>ul<ins>ti</ins> <ins>T</ins>urn <ins>A</ins>gentic <ins>R</ins>einf<ins>O</ins>rcement Learning
