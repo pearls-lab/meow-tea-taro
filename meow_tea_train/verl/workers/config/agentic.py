@@ -68,12 +68,14 @@ class SWEAgentKwargs:
 
 @dataclass
 class AgenticAgentLoopConfig(BaseConfig):
-    type: str = "async_software"
+    type: Optional[str] = None
     kwargs: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.type == "async_software":
             # Use object.__setattr__ for frozen dataclass
             object.__setattr__(self, 'kwargs', SWEAgentKwargs(**self.kwargs))
+        elif self.type is None:
+            pass
         else:
             raise ValueError(f"Unsupported agent loop type: {self.type}")
