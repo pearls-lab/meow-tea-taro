@@ -77,7 +77,7 @@ Our paper presents systematic findings on **what works and what doesn't** for mu
 
 Start by creating and running a Docker container with GPU support
 ```bash
-docker create --runtime=nvidia --gpus all --net=host --shm-size="10g" --cap-add=SYS_ADMIN -v .:/workspace --name meow-tea-taro hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0 sleep infinity
+docker create --runtime=nvidia --gpus all --net=host --shm-size="10g" --cap-add=SYS_ADMIN -v .:/workspace --name meow-tea-taro hiyouga/verl:ngc-th2.8.0-cu12.9-vllm0.11.0 sleep infinity
 docker start meow-tea-taro
 docker exec -it meow-tea-taro bash
 ```
