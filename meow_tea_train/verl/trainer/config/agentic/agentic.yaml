@@ -58,7 +58,7 @@ agent_loop:
   # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
   _target_: verl.workers.config.AgenticAgentLoopConfig
 
-  # The type of the agent loop, choose from ["async_software"]
+  # The type of the agent loop, choose from ["swe_agent"]
   type: null
 
   # Additional kwargs for the agent loop

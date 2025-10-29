@@ -63,7 +63,7 @@ class AgenticRewardConfig(BaseConfig):
 class SWEAgentKwargs:
     """Configuration for SWE-agent specific parameters"""
     trajs_save_dir: Optional[str] = None
-    swe_agent_config_path: Optional[str] = None
+    sweagent_config_path: Optional[str] = None
 
 
 @dataclass
