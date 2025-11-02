@@ -782,17 +782,9 @@ class RayPPOTrainer:
 
         # create async rollout manager and request scheduler
         self.async_rollout_mode = False
-        # if self.config.actor_rollout_ref.rollout.mode == "async":
-        #     from verl.experimental.agent_loop import AgentLoopManager
+        if self.config.actor_rollout_ref.rollout.mode == "async":
+            from verl.experimental.agent_loop import AgentLoopManager
 
-        #     self.async_rollout_mode = True
-        #     self.async_rollout_manager = AgentLoopManager(
-        #         config=self.config, worker_group=self.actor_rollout_wg, rm_wg=self.rm_wg
-        #     )
-
-        # NOTE from meow-tea: we use a different entrypoint for async rollout mode
-        if is_agentic(self.config) and self.config.agentic.environment.is_async:
-            from meow_tea_train.agentic_menu.base.agent_loop import AgentLoopManager
             self.async_rollout_mode = True
             self.async_rollout_manager = AgentLoopManager(
                 config=self.config, worker_group=self.actor_rollout_wg, rm_wg=self.rm_wg
