@@ -59,13 +59,19 @@ meow-tea-train = "meow_tea_train.cli:train_command"
 
 
 [tool.setuptools]
-packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_experiments"]
+packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_gym", "sweagent", "meow_tea_experiments"]
 
 [tool.setuptools.package-dir]
 "meow_tea_train" = "meow_tea_train"
 "meow_tea_train.verl" = "meow_tea_train/verl"
 "verl" = "meow_tea_train/verl"
+"meow_tea_gym" = "meow_tea_gym"
+"sweagent" = "meow_tea_gym/SWE-agent/sweagent"
 "meow_tea_experiments" = "meow_tea_experiments"
+
+# Include non-Python files (config, tools, etc.)
+[tool.setuptools.package-data]
+sweagent = ["../config/**/*", "../tools/**/*"]
 
 [tool.black]
 line-length = 120
