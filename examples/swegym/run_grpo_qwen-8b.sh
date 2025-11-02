@@ -7,15 +7,15 @@ set -x
 export HYDRA_FULL_ERROR=1
 
 # DATA/TASK CONFIG
-env_name="textworld"
-task_prefix="w2-o3-q4"
+env_name="swegym"
+# task_prefix="w2-o3-q4"
 # instance_id_start=50001
 # instance_id_end=51000
 # hf_data_repo="PEARLS-Lab/meow-tea-taro-dataset"
 # hf_instances_dir="textworld/w2-o3-q4/instances"
 # hf_train_data_dir="textworld/w2-o3-q4/multiturn_rl_data/1000_train_data"
-local_instances_dir="local/$hf_instances_dir"
-local_train_data_dir="local/$hf_train_data_dir"
+# local_instances_dir="local/$hf_instances_dir"
+# local_train_data_dir="local/$hf_train_data_dir"
 local_parquet_dir="local/train_parquet"
 reward_method="single"
 
@@ -32,8 +32,9 @@ is_async=True
 max_iter=8
 reward_density=$reward_method
 reward_type="verified"
-reward_manager="agentic_verified"
+reward_manager="naive"
 rollout_name="vllm"
+rollout_mode="async"
 
 # ALGORITHM CONFIG
 adv_estimator=grpo
@@ -139,7 +140,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     agentic.reward.density=$reward_density \
     agentic.reward.type=$reward_type \
     agentic.agent_loop.type="async_software" \
-    +agentic.agent_loop.kwargs.sweagent_trajs_dir="local/trajectories" \
+    +agentic.agent_loop.kwargs.trajs_save_dir="local/trajectories" \
     +agentic.agent_loop.kwargs.sweagent_config_path="local/sweagent_config.yaml" \
     actor_rollout_ref.model.path=$actor_model_path \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -156,6 +157,9 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
     +actor_rollout_ref.rollout.agentic='${agentic}' \
+    actor_rollout_ref.rollout.agent.num_workers=4 \
+    actor_rollout_ref.rollout.agent.default_agent_loop="swe_agent" \
+    actor_rollout_ref.rollout.agent.agent_loop_config_path="agent_loop_configs.yaml" \
     actor_rollout_ref.rollout.temperature=$rollout_temp \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=$gpu_memory_utilization \
