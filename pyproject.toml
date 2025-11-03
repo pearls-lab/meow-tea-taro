@@ -66,7 +66,7 @@ packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_gym", "sw
 "meow_tea_train.verl" = "meow_tea_train/verl"
 "verl" = "meow_tea_train/verl"
 "meow_tea_gym" = "meow_tea_gym"
-"sweagent" = "meow_tea_gym/SWE-agent/sweagent"
+"sweagent" = "meow_tea_gym/envs/SWE-agent/sweagent"
 "meow_tea_experiments" = "meow_tea_experiments"
 
 # Include non-Python files (config, tools, etc.)
