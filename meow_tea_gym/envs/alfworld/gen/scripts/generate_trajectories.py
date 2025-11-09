@@ -14,7 +14,7 @@ from datetime import datetime
 
 import alfworld.gen.constants
 from alfworld.gen.agents.deterministic_planner_agent import DeterministicPlannerAgent
-from alfworld.env.thor_env import ThorEnv
+from alfworld.env.thor_env_v5 import ThorEnv
 from alfworld.gen.game_states.task_game_state_full_knowledge import TaskGameStateFullKnowledge
 from alfworld.gen.utils.video_util import VideoSaver
 from alfworld.gen.utils.dataset_management_util import load_successes_from_disk, load_fails_from_disk

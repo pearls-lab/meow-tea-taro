@@ -190,9 +190,11 @@ class OracleAgent(BaseAgent):
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
                 if obj in self.visible_objects:
                     object = self.get_object(obj, self.objects)
-                    event = self.env.step({'action': "PickupObject",
-                                           'objectId': object['object_id'],
-                                           'forceAction': True})
+                    api_cmd = {'action': "PickupObject",
+                                'objectId': object['object_id'],
+                                'forceAction': True}
+                    fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                    event = self.env.step(fixed_cmd)
 
                     if event.metadata['lastActionSuccess']:
                         self.inventory.append(object['num_id'])
@@ -201,10 +203,12 @@ class OracleAgent(BaseAgent):
             elif cmd['action'] == self.Action.PUT:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
                 recep = self.get_object(tar, self.receptacles)
-                event = self.env.step({'action': "PutObject",
-                                       'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
-                                       'receptacleObjectId': recep['object_id'],
-                                       'forceAction': True})
+                api_cmd = {'action': "PutObject",
+                            'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
+                            'receptacleObjectId': recep['object_id'],
+                            'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                event = self.env.step(fixed_cmd)
                 if event.metadata['lastActionSuccess']:
                     self.inventory.pop()
                     self.feedback = "You put the %s %s the %s." % (obj, rel, tar)
@@ -212,9 +216,11 @@ class OracleAgent(BaseAgent):
             elif cmd['action'] == self.Action.OPEN:
                 target = cmd['tar']
                 recep = self.get_object(target, self.receptacles)
-                event = self.env.step({'action': "OpenObject",
-                                       'objectId': recep['object_id'],
-                                       'forceAction': True})
+                api_cmd = {'action': "OpenObject",
+                            'objectId': recep['object_id'],
+                            'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                event = self.env.step(fixed_cmd)
                 self.receptacles[recep['object_id']]['closed'] = False
                 self.visible_objects, self.feedback = self.print_frame(recep, self.curr_loc)
                 action_feedback = "You open the %s. The %s is open. " % (target, target)
@@ -224,18 +230,22 @@ class OracleAgent(BaseAgent):
             elif cmd['action'] == self.Action.CLOSE:
                 target = cmd['tar']
                 recep = self.get_object(target, self.receptacles)
-                event = self.env.step({'action': "CloseObject",
-                                       'objectId': recep['object_id'],
-                                       'forceAction': True})
+                api_cmd = {'action': "CloseObject",
+                            'objectId': recep['object_id'],
+                            'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                event = self.env.step(fixed_cmd)
                 self.receptacles[recep['object_id']]['closed'] = True
                 self.feedback = "You close the %s." % target
 
             elif cmd['action'] == self.Action.TOGGLE:
                 target = cmd['tar']
                 obj = self.get_object(target, self.objects)
-                event = self.env.step({'action': "ToggleObjectOn",
-                                       'objectId': obj['object_id'],
-                                       'forceAction': True})
+                api_cmd = {'action': "ToggleObjectOn",
+                            'objectId': obj['object_id'],
+                            'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                event = self.env.step(fixed_cmd)
                 self.feedback = "You turn on the %s." % target
 
             elif cmd['action'] == self.Action.HEAT:
@@ -245,15 +255,31 @@ class OracleAgent(BaseAgent):
 
                 # open the microwave, heat the object, take the object, close the microwave
                 events = []
-                events.append(self.env.step({'action': 'OpenObject', 'objectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PutObject', 'objectId': obj_id, 'receptacleObjectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'CloseObject', 'objectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'ToggleObjectOn', 'objectId': recep['object_id'], 'forceAction': True}))
+                api_cmd = {'action': 'OpenObject', 'objectId': recep['object_id'], 'forceAction': True} 
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PutObject', 'objectId': obj_id, 'receptacleObjectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'CloseObject', 'objectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'ToggleObjectOn', 'objectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
                 events.append(self.env.step({'action': 'Pass'}))
-                events.append(self.env.step({'action': 'ToggleObjectOff', 'objectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'OpenObject', 'objectId': recep['object_id'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PickupObject', 'objectId': obj_id, 'forceAction': True}))
-                events.append(self.env.step({'action': 'CloseObject', 'objectId': recep['object_id'], 'forceAction': True}))
+                api_cmd = {'action': 'ToggleObjectOff', 'objectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'OpenObject', 'objectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PickupObject', 'objectId': obj_id, 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'CloseObject', 'objectId': recep['object_id'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
 
                 if all(e.metadata['lastActionSuccess'] for e in events) and self.curr_recep == tar:
                     self.feedback = "You heat the %s using the %s." % (obj, tar)
@@ -266,11 +292,22 @@ class OracleAgent(BaseAgent):
 
                 # put the object in the sink, turn on the faucet, turn off the faucet, pickup the object
                 events = []
-                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': sink['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'ToggleObjectOn', 'objectId': faucet['objectId'], 'forceAction': True}))
+                api_cmd = {'action': 'OpenObject', 'objectId': sink['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': sink['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'ToggleObjectOn', 'objectId': faucet['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
                 events.append(self.env.step({'action': 'Pass'}))
-                events.append(self.env.step({'action': 'ToggleObjectOff', 'objectId': faucet['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PickupObject', 'objectId': object['objectId'], 'forceAction': True}))
+                api_cmd = {'action': 'ToggleObjectOff', 'objectId': faucet['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PickupObject', 'objectId': object['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
 
                 if all(e.metadata['lastActionSuccess'] for e in events) and self.curr_recep == tar:
                     self.feedback = "You clean the %s using the %s." % (obj, tar)
@@ -282,13 +319,25 @@ class OracleAgent(BaseAgent):
 
                 # open the fridge, put the object inside, close the fridge, open the fridge, pickup the object
                 events = []
-                events.append(self.env.step({'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': fridge['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'CloseObject', 'objectId': fridge['objectId'], 'forceAction': True}))
+                api_cmd = {'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PutObject', 'objectId': object['objectId'], 'receptacleObjectId': fridge['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'CloseObject', 'objectId': fridge['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
                 events.append(self.env.step({'action': 'Pass'}))
-                events.append(self.env.step({'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'PickupObject', 'objectId': object['objectId'], 'forceAction': True}))
-                events.append(self.env.step({'action': 'CloseObject', 'objectId': fridge['objectId'], 'forceAction': True}))
+                api_cmd = {'action': 'OpenObject', 'objectId': fridge['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'PickupObject', 'objectId': object['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
+                api_cmd = {'action': 'CloseObject', 'objectId': fridge['objectId'], 'forceAction': True}
+                fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                events.append(self.env.step(fixed_cmd))
 
                 if all(e.metadata['lastActionSuccess'] for e in events) and self.curr_recep == tar:
                     self.feedback = "You cool the %s using the %s." % (obj, tar)
@@ -298,8 +347,11 @@ class OracleAgent(BaseAgent):
                 object = self.get_object(obj, self.objects)
                 inventory_objects = self.env.last_event.metadata['inventoryObjects']
                 if 'Knife' in inventory_objects[0]['objectType']:
-                    event = self.env.step({'action': "SliceObject",
-                                           'objectId': object['object_id']})
+                    api_cmd = {'action': "SliceObject",
+                                'objectId': object['object_id'],
+                                'forceAction': True}
+                    fixed_cmd = self.fix_object_ids_in_action(api_cmd)
+                    event = self.env.step(fixed_cmd)
                 self.feedback = "You slice %s with the %s" % (obj, tar)
 
             elif cmd['action'] == self.Action.INVENTORY:
@@ -337,4 +389,93 @@ class OracleAgent(BaseAgent):
         if self.debug:
             print(self.feedback)
         return self.feedback
+
+    
+    def find_correct_object(self, traj_object_id):
+        """
+        Find the correct object from the scene metadata.
+
+        Args:
+            traj_object_id: The objectId from trajectory (may be outdated)
+        
+        Returns:
+            Correct objectId from the scene, or None if not found
+        """
+        objects = self.env.last_event.metadata.get('objects', [])
+        
+        # First, check if the exact objectId exists in the scene
+        for obj in objects:
+            if obj.get('objectId') == traj_object_id:
+                return obj
+        
+        # Extract object name/type from objectId (format: "Type|x|y|z")
+        object_name = traj_object_id.split('|')[0] if '|' in traj_object_id else traj_object_id
+        
+        # Try to find by exact name match (case-insensitive)
+        candidates = []
+        for obj in objects:
+            obj_name = obj.get('name', '')
+            obj_type = obj.get('objectType', '')
+            obj_id = obj.get('objectId', '')
+            
+            # Check if name or type matches
+            if obj_name.lower() == object_name.lower() or obj_type == object_name:
+                # Prefer visible objects
+                if obj.get('visible', False):
+                    return obj
+                candidates.append(obj)
+        
+        # If found candidates but none visible, return the first one
+        if candidates:
+            return candidates[0]
+        
+        # If still not found, try partial name match
+        for obj in objects:
+            obj_name = obj.get('name', '').lower()
+            obj_id = obj.get('objectId', '')
+            if object_name.lower() in obj_name or obj_name in object_name.lower():
+                if obj.get('visible', False):
+                    return obj
+                if not candidates:
+                    candidates.append(obj)
+        
+        return candidates[0] if candidates else None
+
+
+    def fix_object_ids_in_action(self, api_cmd):
+        """
+        Fix objectIds in the action command if they don't exist in the scene.
+        
+        Args:
+            api_cmd: The API action command from trajectory
+        
+        Returns:
+            Fixed action command with correct objectIds
+        """
+        fixed_cmd = api_cmd.copy()
+        
+        # Check for objectId
+        if 'objectId' in fixed_cmd:
+            traj_obj_id = fixed_cmd['objectId']
+            correct_obj = self.find_correct_object(traj_obj_id)
+            if correct_obj:
+                if correct_obj['objectId'] != traj_obj_id:
+                    print(f"  [Fix] objectId: {traj_obj_id} -> {correct_obj['objectId']}")
+                fixed_cmd['objectId'] = correct_obj['objectId']
+            else:
+                print(f"  [Warning] Could not find correct objectId for: {traj_obj_id}")
+        
+        # Check for receptacleObjectId (used in PutObject)
+        if 'receptacleObjectId' in fixed_cmd:
+            traj_recep_id = fixed_cmd['receptacleObjectId']
+            correct_recep = self.find_correct_object(traj_recep_id)
+            if correct_recep:
+                if correct_recep['objectId'] != traj_recep_id:
+                    print(f"  [Fix] receptacleObjectId: {traj_recep_id} -> {correct_recep['objectId']}")
+                fixed_cmd['receptacleObjectId'] = correct_recep['objectId']
+            else:
+                print(f"  [Warning] Could not find correct receptacleObjectId for: {traj_recep_id}")
+        
+        fixed_cmd['forceAction'] = True  # Ensure forceAction is always True
+        return fixed_cmd
 

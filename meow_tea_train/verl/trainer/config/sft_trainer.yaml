@@ -51,7 +51,7 @@ optim:
   lr: 1e-5
   betas: [0.9, 0.95]
   weight_decay: 0.01
-  lr_warmup_steps_ratio: 0.1
+  warmup_steps_ratio: 0.1
   clip_grad: 1.0
   lr_scheduler: cosine
 ulysses_sequence_parallel_size: 1

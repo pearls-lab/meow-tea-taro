@@ -73,6 +73,14 @@ class PickupObjectAction(BaseAction):
         if len(inventory_objects):
             inv_object_id = state.metadata['inventoryObjects'][0]['objectId']
             goal_object_id = subgoal['objectId']
+
+            # doesn't matter which slice you pick up
+            def remove_slice_postfix(object_id):
+                return object_id.split("Sliced")[0]
+
+            inv_object_id = remove_slice_postfix(inv_object_id)
+            goal_object_id = remove_slice_postfix(goal_object_id)
+
             reward, done = (self.rewards['positive'], True) if inv_object_id == goal_object_id else (self.rewards['negative'], False)
         return reward, done
 
@@ -239,12 +247,35 @@ class CoolObjectAction(BaseAction):
             return reward, done
 
         reward, done = self.rewards['neutral'], False
+        subgoal = expert_plan[goal_idx]['planner_action']
         next_put_goal_idx = goal_idx+2 # (+1) GotoLocation -> (+2) PutObject (get the objectId from the PutObject action)
         if next_put_goal_idx < len(expert_plan):
             cool_object_id = expert_plan[next_put_goal_idx]['planner_action']['objectId']
             cool_object = get_object(cool_object_id, state.metadata)
             is_obj_cool = cool_object['objectId'] in self.env.cooled_objects
-            reward, done = (self.rewards['positive'], True) if is_obj_cool else (self.rewards['negative'], False)
+            
+            # TODO(mohit): support dense rewards for all subgoals
+            # intermediate reward if object is cooled
+            if is_obj_cool and not self.env.cooled_reward:
+                self.env.cooled_reward = True
+                reward, done = self.rewards['positive'], False
+
+            # intermediate reward for opening fridge after object is cooled
+            elif is_obj_cool and state.metadata['lastAction']=='OpenObject':
+                target_recep = get_object(subgoal['objectId'], state.metadata)
+                if target_recep is not None and not self.env.reopen_reward:
+                    if target_recep['isOpen']:
+                        self.env.reopen_reward = True
+                        reward, done = self.rewards['positive'], False
+
+            # intermediate reward for picking up cooled object after reopening fridge
+            elif is_obj_cool and state.metadata['lastAction']=='PickupObject':
+                inventory_objects = state.metadata['inventoryObjects']
+                if len(inventory_objects):
+                    inv_object_id = state.metadata['inventoryObjects'][0]['objectId']
+                    if inv_object_id == cool_object_id:
+                        reward, done = self.rewards['positive'], True # Subgoal completed
+
         return reward, done
 
 

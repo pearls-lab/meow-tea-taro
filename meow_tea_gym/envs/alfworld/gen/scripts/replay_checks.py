@@ -6,7 +6,7 @@ import json
 import numpy as np
 import shutil
 import time
-from alfworld.env.thor_env import ThorEnv
+from alfworld.env.thor_env_v5 import ThorEnv
 from alfworld.gen.utils.replay_json import replay_json
 
 

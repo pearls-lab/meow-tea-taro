@@ -19,7 +19,7 @@ class BaseTask(object):
         self.max_episode_length = max_episode_length
         self.reward_type = reward_type
         self.step_num = 0
-        self.num_subgoals = len(self.traj['plan']['high_pddl']) - 1  # ignore end noop
+        self.num_subgoals = self.get_num_subgoals(self.traj['plan']['high_pddl']) 
         self.goal_finished = False
 
         # internal states
@@ -53,6 +53,18 @@ class BaseTask(object):
         floor_plan = self.traj['scene']['floor_plan']
         scene_num = self.traj['scene']['scene_num']
         self.gt_graph = graph_obj.Graph(use_gt=True, construct_graph=True, scene_id=scene_num)
+
+    def get_num_subgoals(self, high_pddl):
+        '''
+        number of subgoals in high-level pddl plan
+        '''
+        last_action = high_pddl[-1]
+
+        # issue97: https://github.com/askforalfred/alfred/issues/97
+        if last_action['planner_action']['action'] == 'End':
+            return len(high_pddl) - 1  # ignore NoOp/End action
+        else:
+            return len(high_pddl) 
 
     def goal_satisfied(self, state):
         '''
@@ -109,6 +121,7 @@ class BaseTask(object):
         # step and check if max_episode_length reached
         self.step_num += 1
         done = self.goal_idx >= self.num_subgoals or self.step_num >= self.max_episode_length
+        print(f"  [Task] step_num: {self.step_num}, goal_idx: {self.goal_idx}, done: {done}, max_episode_length: {self.max_episode_length}")
         return reward, done
 
     def reset(self):
@@ -165,8 +178,12 @@ class PickAndPlaceSimpleTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
+        
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
+
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
 
         # check if object needs to be sliced
         if 'Sliced' in targets['object']:
@@ -203,19 +220,43 @@ class PickTwoObjAndPlaceTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
 
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
+
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
+        
         # check if object needs to be sliced
         if 'Sliced' in targets['object']:
             ts += 2
             s += min(len([p for p in pickupables if 'Sliced' in p['objectId']]), 2)
 
         # placing each object counts as a goal_condition
-        s += min(np.max([sum([1 if r['receptacleObjectIds'] is not None
-                                   and p['objectId'] in r['receptacleObjectIds'] else 0
-                              for p in pickupables])
-                         for r in receptacles]), 2)
+        # s += min(np.max([sum([1 if r['receptacleObjectIds'] is not None
+        #                            and p['objectId'] in r['receptacleObjectIds'] else 0
+        #                       for p in pickupables])
+        #                  for r in receptacles]), 2)
+        
+        # calculate the max number of pickupable objs contained in any single receptacle
+        max_obj_in_recep = 0
+
+        for receptacle in receptacles:
+            # Skip receptacles that can't contain objects
+            if receptacle['receptacleObjectIds'] is None:
+                continue
+            
+            # Count how many pickupable objects are in this receptacle
+            obj_in_this_recep = 0
+            for pickupable in pickupables:
+                if pickupable['objectId'] in receptacle['receptacleObjectIds']:
+                    obj_in_this_recep += 1
+            
+            # Track the maximum count across all receptacles
+            max_obj_in_recep = max(max_obj_in_recep, obj_in_this_recep)
+
+        # Cap the score contribution at 2 and add to total score
+        s += min(max_obj_in_recep, 2)
         return s, ts
 
     def reset(self):
@@ -281,9 +322,13 @@ class PickHeatThenPlaceInRecepTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
+        
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
 
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
+        
         # check if object needs to be sliced
         if 'Sliced' in targets['object']:
             ts += 1
@@ -328,8 +373,12 @@ class PickCoolThenPlaceInRecepTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
+        
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
+
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
 
         if 'Sliced' in targets['object']:
             ts += 1
@@ -374,8 +423,12 @@ class PickCleanThenPlaceInRecepTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
+        
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
+
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
 
         if 'Sliced' in targets['object']:
             ts += 1
@@ -420,8 +473,13 @@ class PickAndPlaceWithMovableRecepTask(BaseTask):
         s = 0
 
         targets = self.get_targets()
-        receptacles = get_objects_with_name_and_prop(targets['parent'], 'receptacle', state.metadata)
-        pickupables = get_objects_with_name_and_prop(targets['object'], 'pickupable', state.metadata)
+
+        tgt_parent = targets['parent'].replace("Basin", "")
+        receptacles = get_objects_with_name_and_prop(tgt_parent, 'receptacle', state.metadata)
+
+        tgt_obj = targets['object'].replace("Sliced", "") if 'Sliced' in targets['object'] else targets['object']
+        pickupables = get_objects_with_name_and_prop(tgt_obj, 'pickupable', state.metadata)
+
         movables = get_objects_with_name_and_prop(targets['mrecep'], 'pickupable', state.metadata)
 
         # check if object needs to be sliced
@@ -456,7 +514,7 @@ class PickAndPlaceWithMovableRecepTask(BaseTask):
 
 def get_task(task_type, traj, env, args, reward_type='sparse', max_episode_length=2000):
     task_class_str = task_type.replace('_', ' ').title().replace(' ', '') + "Task"
-
+    
     if task_class_str in globals():
         task = globals()[task_class_str]
         return task(traj, env, args, reward_type=reward_type, max_episode_length=max_episode_length)

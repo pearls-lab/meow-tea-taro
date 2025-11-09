@@ -224,12 +224,12 @@ class FSDPSFTTrainer:
         )
 
         with init_context():
-            self.model: PreTrainedModel = AutoModelForVision2Seq.from_pretrained(
+            self.model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
                 local_model_path,
                 config=config,
                 torch_dtype=torch_dtype,
-                # attn_implementation="flash_attention_2",
-                # trust_remote_code=trust_remote_code,
+                attn_implementation="flash_attention_2",
+                trust_remote_code=trust_remote_code,
             )
 
             if self.use_remove_padding or self.config.ulysses_sequence_parallel_size > 1:
@@ -765,7 +765,7 @@ def main(config):
     run_sft(config)
 
 
-def create_sft_dataset(data_paths, data_config, tokenizer, processor):
+def create_sft_dataset(data_paths, data_config, tokenizer):
     """Create a dataset."""
     # build dataset
     # First check if a custom dataset class is specified
@@ -784,7 +784,7 @@ def create_sft_dataset(data_paths, data_config, tokenizer, processor):
         dataset_cls = SFTDataset
 
     # Create datasets based on the selected class
-    dataset = dataset_cls(parquet_files=data_paths, tokenizer=tokenizer, config=data_config, processor=processor)
+    dataset = dataset_cls(parquet_files=data_paths, tokenizer=tokenizer, config=data_config)
     return dataset
 
 

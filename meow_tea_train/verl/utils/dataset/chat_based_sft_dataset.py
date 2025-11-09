@@ -18,15 +18,17 @@ SFT dataset
 Each parquet file contains
 """
 
-from typing import Union
+from typing import Union, Optional
 
 import pandas as pd
 import re
 import torch
 from omegaconf.listconfig import ListConfig
 from torch.utils.data import Dataset
-from transformers import PreTrainedTokenizer
+from transformers import PreTrainedTokenizer, ProcessorMixin
 
+
+import verl.utils.torch_functional as verl_F
 from verl.utils import hf_tokenizer
 from verl.utils.fs import copy_to_local
 from verl.utils.model import compute_position_id_with_mask
@@ -40,7 +42,13 @@ class ChatBasedSFTDataset(Dataset):
         config (OmegaConf): the data config
     """
 
-    def __init__(self, parquet_files: Union[str, ListConfig], tokenizer, config):
+    def __init__(
+        self, 
+        parquet_files: Union[str, ListConfig],
+        tokenizer,
+        config,
+        processor: Optional[ProcessorMixin] = None,
+    ):
         config = config or {}
         self.truncation = config.get("truncation", "error")
         self.max_length = config.get("max_length", 1024)
@@ -49,6 +57,11 @@ class ChatBasedSFTDataset(Dataset):
         # Get messages_key from the new multiturn config structure
         chat_based_config = config.get("chat_based", {})
         self.messages_key = chat_based_config.get("messages_key", "messages")
+
+        self.image_key = chat_based_config.get("image_key", "images")
+        self.video_key = chat_based_config.get("video_key", "videos")
+        self.apply_chat_template_kwargs = chat_based_config.get("apply_chat_template_kwargs", {})
+        self.return_multi_modal_inputs = chat_based_config.get("return_multi_modal_inputs", True)
 
         assert self.truncation in ["error", "left", "right"]
 
@@ -59,6 +72,7 @@ class ChatBasedSFTDataset(Dataset):
         if isinstance(tokenizer, str):
             tokenizer = hf_tokenizer(tokenizer)
         self.tokenizer: PreTrainedTokenizer = tokenizer
+        self.processor = processor
 
         self._download()
         self._read_files_and_process()
@@ -69,21 +83,19 @@ class ChatBasedSFTDataset(Dataset):
 
     def _read_files_and_process(self):
         def series_to_item(ls):
-            import numpy
-            import pandas
-
-            while isinstance(ls, (pandas.core.series.Series, numpy.ndarray)) and len(ls) == 1:
-                ls = ls[0]
-            return ls
+            if isinstance(ls, list):
+                return ls
+            return ls[0]
 
         dataframes = []
         for parquet_file in self.parquet_files:
-            dataframe = pd.read_parquet(parquet_file)
-            dataframes.append(dataframe)
+            df = pd.read_parquet(parquet_file)
+            dataframes.append(df)
         self.dataframe = pd.concat(dataframes)
 
         # Extract messages list from dataframe
         self.messages = self.dataframe[self.messages_key].apply(series_to_item).tolist()
+        self.dataframe_dict = self.dataframe.to_dict(orient="records")
 
     def _truncate_system_template(self, text: str) -> str:
         """
@@ -96,105 +108,113 @@ class ChatBasedSFTDataset(Dataset):
         pattern = r'<\|im_start\|>system\n.*?<\|im_end\|>\n'
         return re.sub(pattern, '', text, flags=re.DOTALL)
 
+    def _build_messages(self, example: dict):
+        messages: list = example[self.messages_key]
+
+        if self.image_key in example or self.video_key in example:
+            for message in messages:
+                content = message["content"]
+                if not isinstance(content, str):
+                    continue
+                content_list = []
+                segments = re.split("(<image>|<video>)", content)
+                segments = [item for item in segments if item != ""]
+                for segment in segments:
+                    if segment == "<image>":
+                        content_list.append({"type": "image"})
+                    elif segment == "<video>":
+                        content_list.append({"type": "video"})
+                    else:
+                        content_list.append({"type": "text", "text": segment})
+
+                message["content"] = content_list
+
+        return messages
+    
     def __len__(self):
         return len(self.messages)
 
     def __getitem__(self, item):
-        tokenizer = self.tokenizer
-        messages = self.messages[item]
+        row_dict = self.dataframe_dict[item].copy()
+        messages = self._build_messages(row_dict)
+        model_inputs = {}
 
-        # apply chat template
+        if self.processor:
+            from verl.utils.dataset.vision_utils import process_image, process_video
+
+            raw_text = self.processor.apply_chat_template(
+                messages, add_generation_prompt=False, tokenize=False, **self.apply_chat_template_kwargs
+            )
+            multi_modal_data = {}
+
+            images = None
+            row_dict_images = row_dict.pop(self.image_key, None)
+            if row_dict_images:
+                images = [process_image(image) for image in row_dict_images]
+                multi_modal_data["image"] = images
+
+            videos = None
+            row_dict_videos = row_dict.pop(self.video_key, None)
+            if row_dict_videos:
+                videos = [process_video(video) for video in row_dict_videos]
+                multi_modal_data["video"] = [video.numpy() for video in videos]
+
+            model_inputs = self.processor(text=[raw_text], images=images, videos=videos, return_tensors="pt")
+            input_ids = model_inputs.pop("input_ids")
+            attention_mask = model_inputs.pop("attention_mask")
+
+            if self.return_multi_modal_inputs:
+                row_dict["multi_modal_inputs"] = dict(model_inputs)
+        else:
+            raw_text = self.tokenizer.apply_chat_template(
+                messages, add_generation_prompt=False, tokenize=False, **self.apply_chat_template_kwargs
+            )
+            model_inputs = self.tokenizer(raw_text, return_tensors="pt", add_special_tokens=False)
+            input_ids = model_inputs.pop("input_ids")
+            attention_mask = model_inputs.pop("attention_mask")
+
         prompt_chat = messages[:-1]
-
-        # string
-        prompt_chat_str = tokenizer.apply_chat_template(prompt_chat, add_generation_prompt=True, tokenize=False)
-        prompt_chat_str = self._truncate_system_template(prompt_chat_str)
-        assert messages[-1]["role"] == "assistant"
-        response_chat_str = messages[-1]["content"] + tokenizer.eos_token
-
-        # tokenize
-        prompt_ids_output = tokenizer(prompt_chat_str, return_tensors="pt", add_special_tokens=False)
-        prompt_ids = prompt_ids_output["input_ids"][0]
-        prompt_attention_mask = prompt_ids_output["attention_mask"][0]
-
-        response_ids_output = tokenizer(response_chat_str, return_tensors="pt", add_special_tokens=False)
-        response_ids = response_ids_output["input_ids"][0]
-        response_attention_mask = response_ids_output["attention_mask"][0]
-
-        prompt_length = prompt_ids.shape[0]
-        response_length = response_ids.shape[0]
-
-        input_ids = torch.cat((prompt_ids, response_ids), dim=-1)
-        attention_mask = torch.cat((prompt_attention_mask, response_attention_mask), dim=-1)
-
-        # padding to max length
-        sequence_length = input_ids.shape[0]
-        if sequence_length < self.max_length:
-            padded_input_ids = (
-                torch.ones(size=(self.max_length - sequence_length,), dtype=input_ids.dtype)
-                * self.tokenizer.pad_token_id
+        if self.processor:
+            prompt_chat_str = self.processor.apply_chat_template(
+                prompt_chat, add_generation_prompt=True, tokenize=False
             )
-            padded_attention_mask = torch.zeros(size=(self.max_length - sequence_length,), dtype=attention_mask.dtype)
-
-            input_ids = torch.cat((input_ids, padded_input_ids))
-            attention_mask = torch.cat((attention_mask, padded_attention_mask))
-        elif sequence_length > self.max_length:
-            if self.truncation == "left":
-                # actually, left truncation may not be reasonable
-                input_ids = input_ids[-self.max_length :]
-                attention_mask = attention_mask[-self.max_length :]
-            elif self.truncation == "right":
-                input_ids = input_ids[: self.max_length]
-                attention_mask = attention_mask[: self.max_length]
-            elif self.truncation == "error":
-                raise NotImplementedError(f"{sequence_length=} is larger than {self.max_length=}")
-            else:
-                raise NotImplementedError(f"Unknown truncation method {self.truncation}")
-
-        # Extract response_ids from the final input_ids
-        response_start_idx = min(prompt_length, input_ids.shape[0])
-        response_ids_raw = input_ids[response_start_idx:].clone()
-
-        # Pad response_ids to a fixed maximum response length (right padded)
-        max_response_length = self.max_length // 2  
-        if response_ids_raw.shape[0] < max_response_length:
-            padding = torch.full(
-                (max_response_length - response_ids_raw.shape[0],), 
-                self.tokenizer.pad_token_id,
-                dtype=response_ids_raw.dtype
-            )
-            response_ids = torch.cat([response_ids_raw, padding])
+            prompt_model_inputs = self.processor(text=prompt_chat_str, add_special_tokens=False, return_tensors="pt")
+            prompt_ids = prompt_model_inputs["input_ids"][0]
         else:
-            response_ids = response_ids_raw[:max_response_length]
-
-        # Extract prompt_ids from the final input_ids
-        prompt_ids_raw = input_ids[:response_start_idx].clone()
-        # Pad prompt_ids to a fixed maximum prompt length (left padded)
-        max_prompt_length = self.max_length
-        if prompt_ids_raw.shape[0] < max_prompt_length:
-            padding = torch.full(
-                (max_prompt_length - prompt_ids_raw.shape[0],), 
-                self.tokenizer.pad_token_id,
-                dtype=prompt_ids_raw.dtype
+            prompt_chat_str = self.tokenizer.apply_chat_template(
+                prompt_chat, add_generation_prompt=True, tokenize=False
             )
-            prompt_ids = torch.cat([padding, prompt_ids_raw])
-        else:
-            prompt_ids = prompt_ids_raw[:max_prompt_length]
-        
-        position_ids = compute_position_id_with_mask(attention_mask)
+            prompt_ids = self.tokenizer.encode(prompt_chat_str, add_special_tokens=False)
+        prompt_length = len(prompt_ids)
+
+        input_ids, attention_mask = verl_F.postprocess_data(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=self.max_length,
+            pad_token_id=self.tokenizer.pad_token_id,
+            left_pad=False,
+            truncation=self.truncation,
+        )
+        input_ids = input_ids[0]
+        attention_mask = attention_mask[0]
+
+        position_ids = compute_position_id_with_mask(attention_mask.unsqueeze(0))[0]
 
         loss_mask = attention_mask.clone()
-        if prompt_length > 1:
-            # mask out prompt for SFT.
-            loss_mask[: min(prompt_length, loss_mask.size(0)) - 1] = 0
-        # mask out the last token in response
-        loss_mask[min(prompt_length + response_length, loss_mask.size(0)) - 1] = 0
+        if prompt_length > 0:
+            loss_mask[:prompt_length] = 0
+
+        # mask out padding tokens
+        loss_mask[input_ids == self.tokenizer.pad_token_id] = 0
+
+        # mask out the last token which is eos
+        if attention_mask.sum() > 0:
+            last_token_idx = attention_mask.sum() - 1
+            loss_mask[last_token_idx] = 0
 
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "position_ids": position_ids,
             "loss_mask": loss_mask,
-            "prompt_ids": prompt_ids, 
-            "response_ids": response_ids
         }
