@@ -16,19 +16,30 @@ There are two types of display servers available:
 #### Start X Servers (Xorg) -- for GPUs
 
 ```bash
-bash scripts/servers/start_x_servers.sh [num_displays]
+bash scripts/servers/start_x_servers.sh [num_displays] [start_gpu]
 ```
 
+**Parameters:**
+- `num_displays` (optional): Number of display servers to start. Default: 4
+- `start_gpu` (optional): Starting GPU ID to use. Default: 0
+
 **Details:**
-- Starts displays from `:1` onwards (e.g., `:1`, `:2`, `:3`, `:4`)
+- Starts displays from `:0` onwards (e.g., `:0`, `:1`, `:2`, `:3`)
+- Each display uses a dedicated GPU (`:0` → GPU 0, `:1` → GPU 1, etc.)
 - Automatically detects and skips already running displays
 - Removes stale lock files before starting
 - Logs output to `/tmp/xorg_display_*.log`
 
-**Example:**
+**Examples:**
 ```bash
-# Start 4 X servers
-bash scripts/servers/start_x_servers.sh 4
+# Start 8 X servers on GPUs 0-7
+bash scripts/servers/start_x_servers.sh 8
+
+# Start 4 X servers on GPUs 0-3
+bash scripts/servers/start_x_servers.sh 4 0
+
+# Start 4 X servers on GPUs 4-7
+bash scripts/servers/start_x_servers.sh 4 4
 ```
 
 #### Start Xvfb Servers --  for CPUs
@@ -38,7 +49,7 @@ bash scripts/servers/start_xvfb.sh [num_displays]
 ```
 
 **Details:**
-- Starts displays from `:11` onwards (e.g., `:11`, `:12`, `:13`, `:14`)
+- Starts displays from `:10` onwards (e.g., `:10`, `:11`, `:12`, `:13`)
 - Uses software rendering (LIBGL_ALWAYS_SOFTWARE=1)
 - Screen resolution: 1024x768x24
 - Automatically detects and skips already running displays

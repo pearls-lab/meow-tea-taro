@@ -1,11 +1,16 @@
 #!/bin/bash
 # Script to start multiple X servers in the background
-# Usage: bash scripts/servers/start_x_servers.sh [num_displays]
+# Usage: bash scripts/servers/start_x_servers.sh [num_displays] [start_gpu]
 
 NUM_DISPLAYS=${1:-4}  # Default to 4 displays if not specified
-START_DISPLAY=1      # Start from display :1
+START_DISPLAY=0      # Start from display :0
+START_GPU=${2:-0}    # Start from GPU 0 by default
 
 for i in $(seq $START_DISPLAY $((START_DISPLAY + NUM_DISPLAYS - 1))); do
+    # Calculate GPU ID for this display
+    DISPLAY_OFFSET=$((i - START_DISPLAY))
+    GPU_ID=$((START_GPU + DISPLAY_OFFSET))
+
     # Check if display is already running
     if pgrep -f "Xorg.*:$i\$" > /dev/null; then
         echo "Display :$i is already running, skipping..."
@@ -20,9 +25,9 @@ for i in $(seq $START_DISPLAY $((START_DISPLAY + NUM_DISPLAYS - 1))); do
     fi
     sleep 1
 
-    # Start X server
-    echo "Starting X server on display :$i..."
-    nohup python meow_tea_gym/servers/start_x_server.py --display $i > /tmp/xorg_display_${i}.log 2>&1 &
+    # Start X server with specific GPU
+    echo "Starting X server on display :$i using GPU $GPU_ID..."
+    nohup python meow_tea_gym/servers/start_x_server.py --display $i --gpu $GPU_ID > /tmp/xorg_display_${i}.log 2>&1 &
 
     # Wait for X server to start (check log file or process)
     sleep 2
@@ -30,7 +35,7 @@ for i in $(seq $START_DISPLAY $((START_DISPLAY + NUM_DISPLAYS - 1))); do
     # Get the actual Xorg PID
     XORG_PID=$(pgrep -f "Xorg.*:$i\$")
     if [ -n "$XORG_PID" ]; then
-        echo "  ✓ Display :$i started (PID: $XORG_PID)"
+        echo "  ✓ Display :$i started on GPU $GPU_ID (PID: $XORG_PID)"
     else
         echo "  ✗ Display :$i failed to start - check /tmp/xorg_display_${i}.log"
     fi

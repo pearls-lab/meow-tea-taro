@@ -3,7 +3,7 @@
 # Usage: bash scripts/servers/start_xvfb.sh [num_displays]
 
 NUM_DISPLAYS=${1:-4}  # Default to 4 displays if not specified
-START_DISPLAY=11      # Start from display :11
+START_DISPLAY=10      # Start from display :10
 
 echo "Starting $NUM_DISPLAYS Xvfb servers..."
 echo ""
