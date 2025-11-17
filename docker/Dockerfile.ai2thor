@@ -1,0 +1,50 @@
+# Start from the latest vllm/verl image
+FROM hiyouga/verl:ngc-th2.8.0-cu12.9-vllm0.11.0
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y curl wget git vim sudo nvidia-settings && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y xserver-xorg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# (Optional) Install kmod if not present
+RUN apt-get update && \
+    apt-get install -y kmod
+
+# Clone AI2THOR Docker repository and install NVIDIA dependencies
+RUN git clone https://github.com/allenai/ai2thor-docker.git && \
+    sh ai2thor-docker/scripts/install_nvidia.sh && \
+    rm -rf ai2thor-docker
+
+# Set up Conda
+ENV PATH="/root/miniconda3/bin:${PATH}"
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+
+RUN bash miniconda.sh -b -p /root/miniconda3 && \
+    rm miniconda.sh
+
+RUN /root/miniconda3/bin/conda init bash
+RUN echo "source /root/miniconda3/bin/activate" >> ~/.bashrc
+
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+# Create AI2THOR environment with Python 3.6
+RUN /root/miniconda3/bin/conda create -y -n ai2thor python=3.6 && \
+    echo "conda activate ai2thor" > /root/activate_ai2thor.sh && \
+    /root/miniconda3/bin/conda clean -ya
+
+# Install AI2THOR in the Python 3.6 environment
+SHELL ["/bin/bash", "-c"]
+RUN source /root/miniconda3/bin/activate ai2thor && \
+    PIP_CONSTRAINT= pip install --ignore-installed ai2thor==2.1.0 flask requests opencv-python-headless==4.5.3.56 pillow numpy pandas networkx h5py tqdm vocab revtok boto3
+
+# Install X display server and XVFB dependencies
+RUN apt-get update && apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl1-mesa mesa-utils
+RUN apt-get update && apt-get install -y xvfb x11-xkb-utils xfonts-base xfonts-75dpi
+
+# 2) Force everything to use Mesa software GL
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV __GLX_VENDOR_LIBRARY_NAME=mesa
+ENV __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
