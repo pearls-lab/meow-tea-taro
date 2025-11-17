@@ -6,15 +6,6 @@ import io
 import os
 from tqdm import tqdm
 
-# Helper function to convert an image file to bytes
-def get_image_bytes(image_path):
-    """Opens an image, converts it to RGB, and returns its byte representation."""
-    with Image.open(image_path) as img:
-        img = img.convert("RGB")  # Ensure consistent color format
-        byte_arr = io.BytesIO()
-        img.save(byte_arr, format='PNG') # You can use other formats like JPEG
-        return byte_arr.getvalue()
-
 
 def format_input_for_sft(traj_file_path: str, image_file_path: str) -> None:
     """Formats a single training sample for chat-based SFT with images.
@@ -36,7 +27,7 @@ def format_input_for_sft(traj_file_path: str, image_file_path: str) -> None:
             {"role": "user", "content": user_format})
         messages.append(
             {"role": "assistant", "content": traj[i*2 + 1]})
-        curr_img = get_image_bytes(os.path.join(image_file_path, f"step_{i}.png"))
+        curr_img = os.path.join(image_file_path, f"step_{i}.png")
         images.append(curr_img)
         data.append(
             {
