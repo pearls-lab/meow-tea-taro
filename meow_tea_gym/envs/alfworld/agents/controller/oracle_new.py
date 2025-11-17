@@ -5,6 +5,7 @@ import json
 import re
 import random
 import traceback
+import math
 
 import numpy as np
 from collections import Counter
@@ -18,15 +19,11 @@ from alfworld.agents.utils.misc import extract_admissible_commands_with_heuristi
 
 class OracleAgent(BaseAgent):
 
-    def __init__(self, env, traj_data, tw_data, traj_root,
+    def __init__(self, env, traj_data, traj_root,
                  load_receps=False, debug=False,
                  goal_desc_human_anns_prob=0.0,
-                 use_gt_relations=False,
-                 use_precomputed_locs=True,
-                 use_explored_receps=False):
+                 use_gt_relations=False):
         self.openable_points = self.get_openable_points(traj_data)
-        self.precomputed_locs = tw_data.get('precomputed_locs', {}) if use_precomputed_locs else {}
-        self.explored_receps = tw_data.get('explored_receps', {}) if use_explored_receps else {}
         self.use_gt_relations = use_gt_relations
         self.exploration_frames = []
         super().__init__(env, traj_data, traj_root,
@@ -68,15 +65,10 @@ class OracleAgent(BaseAgent):
             'horizon': hor,
             'rotateOnTeleport': True,   # we use absolute pose
         }
-
-    def get_explored_receps(self):
-        return self.receptacles
+    
 
     # use pre-computed openable points from ALFRED to store receptacle locations
     def explore_scene(self):
-        if self.explored_receps and len(self.explored_receps) > 0:
-            print("Using pre-computed explored receptacles for ALFWorld Oracle agent...")
-            return
         agent_height = self.env.last_event.metadata['agent']['position']['y']
         print("Exploring scene for ALFWorld Oracle agent...")
         # teleport to each openable point and record receptacle info
@@ -92,8 +84,6 @@ class OracleAgent(BaseAgent):
             
             for turn in range(2):
                 if event.metadata['lastActionSuccess']:
-                    new_locs = self._get_abs_viewpose()
-
                     self.exploration_frames.append(np.array(self.env.last_event.frame[:,:,::-1]))
                     instance_segs = np.array(self.env.last_event.instance_segmentation_frame)
                     color_to_object_id = self.env.last_event.color_to_object_id
@@ -113,6 +103,7 @@ class OracleAgent(BaseAgent):
                                 object_type += "Basin"
 
                             if object_type in self.STATIC_RECEPTACLES:
+                                new_locs = self._get_abs_viewpose()
                                 if object_id not in self.receptacles:
                                     self.receptacles[object_id] = {
                                         'object_id': object_id,
@@ -123,13 +114,15 @@ class OracleAgent(BaseAgent):
                                         'closed': True if object_type in constants.OPENABLE_CLASS_LIST else None
                                     }
                                 elif object_id in self.receptacles and num_pixels > self.receptacles[object_id]['num_pixels']:
-                                    self.receptacles[object_id]['locs'] = new_locs
-                                    self.receptacles[object_id]['num_pixels'] = num_pixels
+                                        self.receptacles[object_id]['locs'] = new_locs
+                                        self.receptacles[object_id]['num_pixels'] = num_pixels
+                                    
 
                 # turn 180 degrees and try again
                 event = self.env.step({'action': 'RotateRight'})
                 event = self.env.step({'action': 'RotateRight'})
 
+        # self.save_receps()
 
     # ground-truth instance segemetations (with consistent object IDs) from THOR
     def get_instance_seg(self):
@@ -228,8 +221,11 @@ class OracleAgent(BaseAgent):
                 if self.debug:
                     print(f"Success after repositioning with {move['action']}")
                     return event
+            else:
+                if self.debug:
+                    print(f"Failed to place after {move['action']}: {event.metadata['errorMessage']}")
    
-        return event
+        return None
 
     def step(self, action_str):
         event = None
@@ -241,6 +237,9 @@ class OracleAgent(BaseAgent):
             if cmd['action'] == self.Action.GOTO:
                 target = cmd['tar']
                 recep = self.get_object(target, self.receptacles)
+                print("=" * 50)
+                print(recep)
+                print("=" * 50)
                 if recep and recep['num_id'] == self.curr_recep:
                     return self.feedback
                 self.curr_loc = recep['locs']
@@ -258,37 +257,15 @@ class OracleAgent(BaseAgent):
 
             elif cmd['action'] == self.Action.PICK:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
-                print(self.visible_objects)
-                print(obj)
                 if obj in self.visible_objects:
                     object = self.get_object(obj, self.objects)
-                    # (Optional) Close object if it's openable
-                    event = self.env.step({'action': "CloseObject",
-                                            'objectId': object['object_id'],
-                                            'forceAction': True})
-                    # Initial attempt to pick up the object
                     event = self.env.step({'action': "PickupObject",
                                            'objectId': object['object_id'],
                                            'forceAction': True})
-                    # If initial pickup fails, try navigating to pre-computed locations
-                    if not event.metadata['lastActionSuccess']:
-                        if self.debug:
-                            print(f"Initial PickupObject failed: {event.metadata['errorMessage']}")
-                            print("Loading precomputed locations for better pickup...")
-
-                        for precomp in self.precomputed_locs:
-                            if precomp["action"] == "PickupObject" and precomp['objectId'].split('|')[0] == object['object_id'].split('|')[0]:
-                                event = self.navigate(precomp['locs'])
-                                event = self.env.step({'action': "PickupObject",
-                                            'objectId': object['object_id'],
-                                            'forceAction': True})
-                                break
 
                     if event.metadata['lastActionSuccess']:
                         self.inventory.append(object['num_id'])
                         self.feedback = "You pick up the %s from the %s." % (obj, tar)
-                    else:
-                        print("Pickup failed: ", event.metadata['errorMessage'])
 
             elif cmd['action'] == self.Action.PUT:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
@@ -299,38 +276,23 @@ class OracleAgent(BaseAgent):
                     'action': "PutObject",
                     'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
                     'receptacleObjectId': recep['object_id'],
-                    'forceAction': True,
-                    'placeStationary': True,
+                    'forceAction': True
                 })
-                # If initial put object fails, try navigating to pre-computed locations
-                if not event.metadata['lastActionSuccess']:
-                    if self.debug:
-                        print(f"Initial PutObject failed: {event.metadata['errorMessage']}")
-                        print("Loading precomputed locations for better placement...")
 
-                    for precomp in self.precomputed_locs:
-                        if precomp["action"] == "PutObject" and precomp['receptacleObjectId'].split('|')[0] == recep['object_id'].split('|')[0]:
-                            event = self.navigate(precomp['locs'])
-                            event = self.env.step({
-                                'action': "PutObject",
-                                'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
-                                'receptacleObjectId': recep['object_id'],
-                                'forceAction': True,
-                                'placeStationary': True,
-                            })
-                            break
-                # (Optional) Due to the physics engine, placement might fail even if the agent is close enough.
+                # Due to the physics engine, placement might fail even if the agent is close enough.
                 if not event.metadata['lastActionSuccess']:
                     if self.debug:
                         print(f"Initial PutObject failed: {event.metadata['errorMessage']}")
                         print("Adjusting position for better placement...")
-                    event = self.adjust_position_for_placement(recep)
+                    adjust_event = self.adjust_position_for_placement(recep)
                 
-                if event.metadata['lastActionSuccess']:
+                if adjust_event and adjust_event.metadata['lastActionSuccess']:
                     self.inventory.pop()
                     self.feedback = "You put the %s %s the %s." % (obj, rel, tar)
                 else:
-                    print("PutObject failed: ", event.metadata['errorMessage'])
+                    if self.debug:
+                        print(f"PutObject still failed: {event.metadata['errorMessage']}")
+                        print("Can't complete placement after adjustments.")
 
             elif cmd['action'] == self.Action.OPEN:
                 target = cmd['tar']
@@ -457,5 +419,7 @@ class OracleAgent(BaseAgent):
             if self.debug:
                 print(event.metadata['errorMessage'])
 
+        if self.debug:
+            print(self.feedback)
         return self.feedback
 

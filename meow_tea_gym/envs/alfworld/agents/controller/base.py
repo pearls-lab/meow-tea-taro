@@ -4,8 +4,8 @@ import json
 
 import copy
 import random
-import alfworld.gen.constants as constants
-from alfworld.gen.utils.image_util import compress_mask, decompress_mask
+import alfred.gen.constants as constants
+from alfred.gen.utils.image_util import compress_mask, decompress_mask
 from alfworld.agents.utils.misc import get_templated_task_desc, get_human_anns_task_desc, NumpyArrayEncoder
 from enum import Enum
 

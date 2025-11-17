@@ -10,7 +10,7 @@ import random
 
 import alfworld.agents
 from alfworld.agents.utils.misc import get_templated_task_desc
-from alfworld.env.thor_env import ThorEnv
+from alfred.env.thor_env import ThorEnv
 from alfworld.agents.expert import HandCodedThorAgent, HandCodedAgentTimeout
 from alfworld.agents.detector.mrcnn import load_pretrained_model
 from alfworld.agents.controller import OracleAgent, OracleAStarAgent, MaskRCNNAgent, MaskRCNNAStarAgent

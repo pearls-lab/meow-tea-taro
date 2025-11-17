@@ -2,7 +2,7 @@ import os
 import sys
 import json
 
-import alfworld.gen.constants as constants
+import alfred.gen.constants as constants
 from alfworld.agents.expert.handcoded_expert_tw import HandCodedTWAgent, PickAndPlaceSimplePolicy, PickTwoObjAndPlacePolicy, LookAtObjInLightPolicy, PickHeatThenPlaceInRecepPolicy, PickCoolThenPlaceInRecepPolicy, PickCleanThenPlaceInRecepPolicy
 
 class PickAndPlaceSimpleThorPolicy(PickAndPlaceSimplePolicy):

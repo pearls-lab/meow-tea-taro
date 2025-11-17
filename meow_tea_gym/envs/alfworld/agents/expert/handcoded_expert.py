@@ -5,7 +5,7 @@ import json
 import random
 from textworld import Agent
 
-import alfworld.gen.constants as constants
+import alfred.gen.constants as constants
 
 class HandCodedAgentTimeout(NameError):
     pass
