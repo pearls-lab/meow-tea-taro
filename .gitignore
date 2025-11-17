@@ -215,4 +215,4 @@ outputs/
 # Exception: keep env directory in meow_tea_gym
 !meow_tea_gym/envs/*/env/
 !meow_tea_gym/envs/*/env/**
-env/__pycache__
+**/env/__pycache__

@@ -56,7 +56,7 @@ meow-tea-train = "meow_tea_train.cli:train_command"
 
 
 [tool.setuptools]
-packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_gym", "sweagent", "alfworld", "meow_tea_experiments"]
+packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_gym", "sweagent", "meow_tea_experiments"]
 
 [tool.setuptools.package-dir]
 "meow_tea_train" = "meow_tea_train"
@@ -64,7 +64,6 @@ packages = ["meow_tea_train", "meow_tea_train.verl", "verl", "meow_tea_gym", "sw
 "verl" = "meow_tea_train/verl"
 "meow_tea_gym" = "meow_tea_gym"
 "sweagent" = "meow_tea_gym/envs/SWE-agent/sweagent"
-"alfworld" = "meow_tea_gym/envs/alfworld"
 "meow_tea_experiments" = "meow_tea_experiments"
 
 # Include non-Python files (config, tools, etc.)
