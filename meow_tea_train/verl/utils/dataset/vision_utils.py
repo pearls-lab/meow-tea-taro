@@ -20,14 +20,20 @@ from PIL import Image
 from qwen_vl_utils import fetch_image, fetch_video
 
 
-def process_image(image: dict | Image.Image) -> Image.Image:
+def process_image(image: dict | Image.Image | bytes) -> Image.Image:
+    # Case 1: Already a PIL Image (e.g. from on-the-fly loading)
     if isinstance(image, Image.Image):
         return image.convert("RGB")
 
-    if "bytes" in image:
-        assert "image" not in image, "Cannot have both `bytes` and `image`"
-        image["image"] = Image.open(BytesIO(image["bytes"]))
+    # Case 2: Raw Bytes (This is what your Parquet file provides)
+    if isinstance(image, bytes):
+        return Image.open(BytesIO(image)).convert("RGB")
 
+    # Case 3: Dictionary Wrapper (Legacy or specific format)
+    if isinstance(image, dict) and "bytes" in image:
+        return Image.open(BytesIO(image["bytes"])).convert("RGB")
+
+    # Case 4: Fallback to fetching from path/URL
     return fetch_image(image)
 
 

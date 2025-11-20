@@ -26,6 +26,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 import logging
 import re
 from contextlib import nullcontext
+from huggingface_hub import HfApi
 
 import hydra
 import torch
@@ -566,26 +567,45 @@ class FSDPSFTTrainer:
 
         torch.distributed.barrier()
 
-    def upload_checkpoint_to_hf(self):
-        from huggingface_hub import create_repo, HfApi
-        try:
-            # Create HF repo if not exists
-            api = HfApi()
-            create_repo(
-                self.config.trainer.save_hf_repo_id, 
-                repo_type="model",
-                exist_ok=True
-            )
-            # Upload the entire local checkpoint folder
-            api.upload_large_folder(
-                folder_path=self.config.trainer.default_local_dir,
-                repo_id=self.config.trainer.save_hf_repo_id,
-                repo_type="model",
-            )
-            print(f"Uploaded folder {self.config.trainer.default_local_dir} to HF repo {self.config.trainer.save_hf_repo_id}.")
-        except:
-            print("Cannot upload checkpoints to HF.")
+    def upload_checkpoint_to_hf(self, step):
+        # 1. Rank Check
+        if self.device_mesh.get_rank() != 0:
+            return
 
+        # 2. Config Check
+        repo_id = self.config.trainer.get("save_hf_repo_id", None)
+        if not repo_id:
+            return
+
+        from huggingface_hub import HfApi
+
+        folder_path = os.path.join(self.config.trainer.default_local_dir, f"global_step_{step}")
+        path_in_repo = f"global_step_{step}"
+
+        print(f"Step {step}: Uploading {folder_path} to Hugging Face Repo: {repo_id}...")
+
+        try:
+            api = HfApi()
+            
+            # --- FIX: Explicitly create the repo first ---
+            api.create_repo(
+                repo_id=repo_id,
+                repo_type="model",
+                private=False,  # <--- Force it to be PUBLIC
+                exist_ok=True   # Do not crash if it already exists
+            )
+            # ---------------------------------------------
+
+            api.upload_folder(
+                folder_path=folder_path,
+                repo_id=repo_id,
+                path_in_repo=path_in_repo,
+                repo_type="model"
+            )
+            print(f"Successfully uploaded global_step_{step} to HF!")
+        except Exception as e:
+            print(f"Failed to upload to HF: {e}")
+            
     def _convert_right_to_left_padding(self, input_ids, attention_mask):
         """Convert right-padded tensors to left-padded tensors"""
         batch_size, seq_len = input_ids.shape
@@ -712,7 +732,8 @@ class FSDPSFTTrainer:
 
                 if is_last_step or (self.config.trainer.save_freq > 0 and is_save_step):
                     self.save_checkpoint(step=global_step)
-                    self.upload_checkpoint_to_hf()
+                    # Pass the step so we only upload the relevant folder
+                    self.upload_checkpoint_to_hf(step=global_step)
 
                 if is_last_step:
                     if rank == 0:

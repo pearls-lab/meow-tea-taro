@@ -13,19 +13,19 @@ local_parquet_dir="local/train_parquet"
 
 # MODEL AND TRAINING CONFIG
 base_model=Qwen/Qwen2.5-VL-7B-Instruct
-train_batch_size=16
+train_batch_size=32
 micro_batch_size_per_gpu=2
-max_length=4096
+max_length=8192
 nproc_per_node=8
-save_freq=80 # per steps
+save_freq=1 # per steps
 test_freq=-1 # per steps
-total_epochs=5
+total_epochs=1
 
 # PROJECT CONFIG
 project_name="embodied-vlm-sft" # TODO (optional). WandB project name.
 experiment_name="SFT-alfworld-visual-only-Qwen2.5-VL-7B-Instruct" # TODO (optional). WandB experiment name.
 save_path=checkpoints # The local path to save checkpoints.
-save_hf_repo_id="" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+save_hf_repo_id="ruiyiwang/SFT-alfworld-visual-text-Qwen2.5-VL-7B-Instruct" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 
 
 # Step 1: Process RL data
@@ -40,8 +40,8 @@ echo "Processing multiturn SFT data for tasks ${env_name}-${task_prefix}"
 
 torchrun --nnodes=1 --nproc_per_node=$nproc_per_node \
      -m verl.trainer.fsdp_sft_trainer \
-    data.train_files=$local_parquet_dir/train_v5_high_visual.parquet \
-    data.val_files=$local_parquet_dir/valid_seen_v5_high.parquet \
+    data.train_files=$local_parquet_dir/train_visual.parquet \
+    data.val_files=$local_parquet_dir/train_visual.parquet \
     data.train_batch_size=$train_batch_size \
     data.micro_batch_size_per_gpu=$micro_batch_size_per_gpu \
     +data.chat_based.enable=true \
