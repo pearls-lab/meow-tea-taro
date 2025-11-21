@@ -213,17 +213,24 @@ def split_range(total_start: int, total_end: int, num_workers: int) -> List[Tupl
 
 def main():
     # ===== Configuration =====
-    NUM_WORKERS = 4      # Number of parallel processes
+    NUM_WORKERS = 6      # Number of parallel processes
     START_DISPLAY = 0    # Starting X display number
-    TOTAL_START = 281    # Starting task number
-    TOTAL_END = 790      # Ending task number (inclusive)
+    TOTAL_START = 1    # Starting task number
+    TOTAL_END = 308      # Ending task number (inclusive)
 
     DATA_DIR = "/root/data/alfworld/train/"
     RAW_DIR = "/root/data/alfworld/raw/train"
     IMG_DIR = "/root/data/alfred/train_images" # None to skip
-    TASK_PREFIX = "task1"
+    TASK_PREFIX = "task3"
 
-    TARGET_ACTIONS = ["PickupObject", "PutObject"]
+    if TASK_PREFIX == "task1":
+        TARGET_ACTIONS = ["PickupObject", "PutObject"]
+    elif TASK_PREFIX == "task2":
+        TARGET_ACTIONS = ["PickupObject", "PutObject", "ToggleObjectOn"]
+    elif TASK_PREFIX == "task3":
+        TARGET_ACTIONS = ["PickupObject", "PutObject", "ToggleObjectOn", "ToggleObjectOff"]
+
+    
 
     # Split task range across workers
     work_ranges = split_range(TOTAL_START, TOTAL_END, NUM_WORKERS)

@@ -7,8 +7,10 @@ import random
 import traceback
 
 import numpy as np
+import math
 from collections import Counter
 
+from alfred import env
 import alfred.gen
 import alfworld.gen
 import alfred.gen.constants as constants
@@ -22,11 +24,9 @@ class OracleAgent(BaseAgent):
                  load_receps=False, debug=False,
                  goal_desc_human_anns_prob=0.0,
                  use_gt_relations=False,
-                 use_precomputed_locs=True,
                  use_explored_receps=False):
         self.openable_points = self.get_openable_points(traj_data)
-        self.precomputed_locs = tw_data.get('precomputed_locs', {}) if use_precomputed_locs else {}
-        self.explored_receps = tw_data.get('explored_receps', {}) if use_explored_receps else {}
+        # self.explored_receps = tw_data.get('explored_receps', {}) if use_explored_receps else {}
         self.use_gt_relations = use_gt_relations
         self.exploration_frames = []
         super().__init__(env, traj_data, traj_root,
@@ -74,9 +74,9 @@ class OracleAgent(BaseAgent):
 
     # use pre-computed openable points from ALFRED to store receptacle locations
     def explore_scene(self):
-        if self.explored_receps and len(self.explored_receps) > 0:
-            print("Using pre-computed explored receptacles for ALFWorld Oracle agent...")
-            return
+        # if self.explored_receps and len(self.explored_receps) > 0:
+        #     print("Using pre-computed explored receptacles for ALFWorld Oracle agent...")
+        #     return
         agent_height = self.env.last_event.metadata['agent']['position']['y']
         print("Exploring scene for ALFWorld Oracle agent...")
         # teleport to each openable point and record receptacle info
@@ -196,47 +196,184 @@ class OracleAgent(BaseAgent):
         return visible_objects, feedback
 
     # Helpers for `step` function:
-    def adjust_position_for_placement(self, recep):
-        """Adjust agent position to improve placement success"""
-        # Move closer to get better positioning for placement
-        movements = [
-                        {'action': 'MoveAhead', 'moveMagnitude': 0.25}, # Stepping closer
-                        {'action': 'MoveAhead', 'moveMagnitude': 0.25},
-                        {'action': 'MoveAhead', 'moveMagnitude': 0.25},
-                        {'action': 'MoveAhead', 'moveMagnitude': 0.25},
-                        {'action': 'MoveBack', 'moveMagnitude': 1.25}, # Stepping back
-                        {'action': 'MoveBack', 'moveMagnitude': 0.25},
-                        {'action': 'MoveBack', 'moveMagnitude': 0.25},
-                        {'action': 'MoveBack', 'moveMagnitude': 0.25},
-                    ]
-        for move in movements:
-            move_event = self.env.step(move)
-            if self.debug:
-                print(f"Trying {move['action']}: {move_event.metadata['lastActionSuccess']}")
-                if not move_event.metadata['lastActionSuccess']:
-                    print(f"Failed to {move['action']}: {move_event.metadata['errorMessage']}")
-                    continue
-            # Attempt to place the object
+    def teleport_safely(self):
+        """
+        Teleports the agent, handling cases where the held object collides with the world.
+        Strategy: Send object to void -> Teleport Agent -> Summon Object back.
+        """
+        
+        # 1. Check if we are holding anything
+        # In AI2-THOR, metadata['inventoryObjects'] is a list
+        inventory = self.env.last_event.metadata['inventoryObjects']
+        held_obj_id = inventory[0]['objectId'] if len(inventory) > 0 else None
+
+        # --- CASE A: Hand is Empty ---
+        if not held_obj_id:
+            return self.navigate(self.curr_loc)
+
+        # --- CASE B: Hand is Full (The Danger Zone) ---
+        
+        # 1. Try standard teleport first (Optimistic)
+        event = self.navigate(self.curr_loc)
+        if event.metadata['lastActionSuccess']:
+            return event
+
+        # 2. If failed specifically due to collision...
+        err = event.metadata['errorMessage']
+        if "hand" in err or "collision" in err:
+            # print(f"  Collision detected ({err}). Performing Void Maneuver...")
+
+            # A. Send object to the Void (Way below the map)
+            # We use TeleportObject to move it out of the way instantly
             event = self.env.step({
-                'action': "PutObject",
-                'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
-                'receptacleObjectId': recep['object_id'],
-                'forceAction': True,
+                "action": "DropHandObject",
+                "forceAction": True 
+            })
+            if not event.metadata['lastActionSuccess']:
+                print(f"error: {event.metadata['errorMessage']}")
+            
+            # B. Teleport the Agent (Now safe)
+            # We pass the original action again
+            event = self.navigate(self.curr_loc)
+            
+            if not event.metadata['lastActionSuccess']:
+                print(f"  CRITICAL: Agent teleport failed even without object! {event.metadata['errorMessage']}")
+                print(f"error: {event.metadata['errorMessage']}")
+                # If this fails, the location itself is bad (inside a wall), not just the hand.
+                # You might need to trigger your 'find_valid_interaction_point' again here.
+
+            # C. Summon Object back to Hand
+            # Using PickupObject with forceAction=True will teleport it 
+            # from the Void directly into the hand, regardless of distance.
+            self.env.step({
+                "action": "PickupObject",
+                "objectId": held_obj_id,
+                "forceAction": True
             })
             
-            if event.metadata['lastActionSuccess']:
-                if self.debug:
-                    print(f"Success after repositioning with {move['action']}")
-                    return event
-   
-        return event
+        return self.env.last_event
+
+    def find_valid_interaction_point(self, action_str, object_id, receptacle_id=None):
+        """
+        Manually searches for a valid teleport point where the object is visible.
+        Compatible with AI2-THOR 2.1.0 (ALFRED version).
+        """
+        # 1. Get original state of the object (to revert back later)
+        target_obj_id = receptacle_id if action_str == "PutObject" else object_id
+        target_obj_meta = None
+        for obj in self.env.last_event.metadata['objects']:
+            if obj['objectId'] == target_obj_id:
+                target_obj_meta = obj
+                break
+                
+        if not target_obj_meta:
+            print(f"Check failed: Object {object_id} not found in scene metadata.")
+            return None
+
+        original_pos = target_obj_meta['position']
+        original_rot = target_obj_meta['rotation']
+
+        # 2. Search Grid (Polar coordinates around target)
+
+        # --- SEARCH PARAMETERS ---
+        # 1. Distance: Try closer (0.25) for small items, further (1.5) for big ones
+        radii = [0.25, 0.5, 0.75, 1.0, 1.25] 
+        
+        # 2. Rotation: Standard 8 directions
+        angles = [0, 45, 90, 135, 180, 225, 270, 315]
+        
+        # 3. Horizon (Vertical Look): Look down (30), straight (0), or steep down (60)
+        # Many failures happen because the agent isn't looking AT the object
+        horizons = [0, -30, 30] 
+
+        print(f"  Starting Omni-Search for {target_obj_id}...")
+
+        for hor in horizons:
+            for r in radii:
+                for angle_deg in angles:
+                    
+                    # --- A. Math Setup ---
+                    angle_rad = math.radians(angle_deg)
+                    nav_target_pos = original_pos 
+                    
+                    # If Putting, we might need to target the Receptacle's position, not the object's
+                    # (Implementation detail: verify logic for receptacle lookup)
+
+                    cand_x = nav_target_pos['x'] + r * math.sin(angle_rad)
+                    cand_z = nav_target_pos['z'] + r * math.cos(angle_rad)
+                    
+                    dx = nav_target_pos['x'] - cand_x
+                    dz = nav_target_pos['z'] - cand_z
+                    look_yaw = math.degrees(math.atan2(dx, dz))
+                    if look_yaw < 0: look_yaw += 360
+                    look_yaw = round(look_yaw / 15) * 15 
+
+                    # --- B. Teleport ---
+                    # Use the explicit 'standing' and 'horizon' params
+                    teleport_action = {
+                        "action": "TeleportFull",
+                        "x": cand_x,
+                        "y": target_obj_meta['position']['y'],
+                        "z": cand_z,
+                        "rotation": {"x": 0, "y": look_yaw, "z": 0},
+                        "horizon": hor,
+                        "forceAction": True
+                    }
+                    
+                    event = self.env.step(teleport_action)
+                    if not event.metadata['lastActionSuccess']:
+                        continue 
+
+                    # --- C. Visibility Check (Optimization) ---
+                    # Before trying the physics interaction, verify we can SEE it.
+                    # This speeds up the loop significantly.
+                    is_visible = False
+                    for obj in event.metadata['objects']:
+                        if obj['objectId'] == object_id and obj['visible']:
+                            is_visible = True
+                            break
+                    
+                    if not is_visible:
+                        continue # Don't bother trying to pick up invisible objects
+
+                    # --- D. Interaction Probe ---
+                    success = False
+                    if action_str == "PickupObject":
+                        event = self.env.step({"action": "PickupObject", "objectId": object_id, "forceAction": False})
+                        if event.metadata['lastActionSuccess']:
+                            success = True
+                            # Revert State
+                            self.env.step({"action": "TeleportObject", "objectId": object_id, 
+                                    "x": original_pos['x'], "y": original_pos['y'], "z": original_pos['z'], 
+                                    "rotation": original_rot, "forceAction": True})
+                            # Note: You might also need to empty the hand manually via DropHandObject if TeleportObject doesn't clear inventory
+
+                    elif action_str == "PutObject":
+                        # (Same Put logic as before)
+                        event = self.env.step({"action": "PutObject", "objectId": object_id, "receptacleObjectId": receptacle_id, "forceAction": False})
+                        if event.metadata['lastActionSuccess']:
+                            success = True
+                            self.env.step({"action": "PickupObject", "objectId": object_id, "forceAction": True})
+
+                    elif action_str == "OpenObject":
+                        event = self.env.step({"action": "OpenObject", "objectId": object_id, "forceAction": False})
+                        if event.metadata['lastActionSuccess']:
+                            success = True
+                            self.env.step({"action": "CloseObject", "objectId": object_id, "forceAction": True})
+                
+                    # --- E. Success? ---
+                    if success:
+                        print(f"  SUCCESS: Found valid point! (R={r}, H={hor}, Angle={angle_deg})")
+                        return teleport_action
+
+        return None # Failed
 
     def step(self, action_str):
         event = None
         self.feedback = "Nothing happens."
 
         try:
-            cmd = self.parse_command(action_str)
+            cmd = self.parse_command(action_str) 
 
             if cmd['action'] == self.Action.GOTO:
                 target = cmd['tar']
@@ -244,7 +381,8 @@ class OracleAgent(BaseAgent):
                 if recep and recep['num_id'] == self.curr_recep:
                     return self.feedback
                 self.curr_loc = recep['locs']
-                event = self.navigate(self.curr_loc)
+                # event = self.navigate(self.curr_loc)
+                event = self.teleport_safely()
                 self.curr_recep = recep['num_id']
                 self.visible_objects, self.feedback = self.print_frame(recep, self.curr_loc)
 
@@ -258,37 +396,46 @@ class OracleAgent(BaseAgent):
 
             elif cmd['action'] == self.Action.PICK:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
-                print(self.visible_objects)
-                print(obj)
+                print(f"Visible objects: {self.visible_objects}")
+                if obj not in self.visible_objects:
+                    for visible_obj in self.visible_objects:
+                        if visible_obj.split()[0] == obj.split()[0]:
+                            obj = visible_obj
+                            with open("/root/data/alfworld/sft_info/pick_debug.txt", "a") as f:
+                                f.write(f"Change {cmd['obj']} to {obj}\n")
+                            break
+
                 if obj in self.visible_objects:
                     object = self.get_object(obj, self.objects)
-                    # (Optional) Close object if it's openable
+                    # (Optional) Close object if it's openable (needed for toggleable objects)
                     event = self.env.step({'action': "CloseObject",
                                             'objectId': object['object_id'],
                                             'forceAction': True})
+                    if object['object_id'] in self.receptacles:
+                        self.receptacles[object['object_id']]['closed'] = True
                     # Initial attempt to pick up the object
                     event = self.env.step({'action': "PickupObject",
                                            'objectId': object['object_id'],
                                            'forceAction': True})
-                    # If initial pickup fails, try navigating to pre-computed locations
+                    # If initial pickup fails, try finding the valid interaction points
                     if not event.metadata['lastActionSuccess']:
                         if self.debug:
                             print(f"Initial PickupObject failed: {event.metadata['errorMessage']}")
-                            print("Loading precomputed locations for better pickup...")
+                            print("Finding interactable positions for picking up the object...")
 
-                        for precomp in self.precomputed_locs:
-                            if precomp["action"] == "PickupObject" and precomp['objectId'].split('|')[0] == object['object_id'].split('|')[0]:
-                                event = self.navigate(precomp['locs'])
-                                event = self.env.step({'action': "PickupObject",
-                                            'objectId': object['object_id'],
-                                            'forceAction': True})
-                                break
+                        teleport_action = self.find_valid_interaction_point("PickupObject", object_id=object['object_id'], receptacle_id=None)
+                        if teleport_action is not None:
+                            event = self.env.step(teleport_action)
+                            event = self.env.step({'action': "PickupObject",
+                                                   'objectId': object['object_id'],
+                                                   'forceAction': True})
 
                     if event.metadata['lastActionSuccess']:
                         self.inventory.append(object['num_id'])
                         self.feedback = "You pick up the %s from the %s." % (obj, tar)
                     else:
                         print("Pickup failed: ", event.metadata['errorMessage'])
+
 
             elif cmd['action'] == self.Action.PUT:
                 obj, rel, tar = cmd['obj'], cmd['rel'], cmd['tar']
@@ -302,29 +449,22 @@ class OracleAgent(BaseAgent):
                     'forceAction': True,
                     'placeStationary': True,
                 })
-                # If initial put object fails, try navigating to pre-computed locations
+                # If initial put object fails, try finding the valid interaction points
                 if not event.metadata['lastActionSuccess']:
                     if self.debug:
                         print(f"Initial PutObject failed: {event.metadata['errorMessage']}")
-                        print("Loading precomputed locations for better placement...")
+                        print("Finding interactable positions for better placement...")
 
-                    for precomp in self.precomputed_locs:
-                        if precomp["action"] == "PutObject" and precomp['receptacleObjectId'].split('|')[0] == recep['object_id'].split('|')[0]:
-                            event = self.navigate(precomp['locs'])
-                            event = self.env.step({
-                                'action': "PutObject",
+                    teleport_action = self.find_valid_interaction_point("PutObject", object_id=None, receptacle_id=recep['object_id'])
+                    if teleport_action is not None:
+                        event = self.env.step(teleport_action)
+                        event = self.env.step({
+                            'action': "PutObject",
                                 'objectId': self.env.last_event.metadata['inventoryObjects'][0]['objectId'],
                                 'receptacleObjectId': recep['object_id'],
                                 'forceAction': True,
                                 'placeStationary': True,
                             })
-                            break
-                # (Optional) Due to the physics engine, placement might fail even if the agent is close enough.
-                if not event.metadata['lastActionSuccess']:
-                    if self.debug:
-                        print(f"Initial PutObject failed: {event.metadata['errorMessage']}")
-                        print("Adjusting position for better placement...")
-                    event = self.adjust_position_for_placement(recep)
                 
                 if event.metadata['lastActionSuccess']:
                     self.inventory.pop()
@@ -338,6 +478,20 @@ class OracleAgent(BaseAgent):
                 event = self.env.step({'action': "OpenObject",
                                        'objectId': recep['object_id'],
                                        'forceAction': True})
+                
+                # If initial put object fails, try finding the valid interaction points
+                if not event.metadata['lastActionSuccess']:
+                    if self.debug:
+                        print(f"Initial OpenObject failed: {event.metadata['errorMessage']}")
+                        print("Finding interactable positions for better placement...")
+
+                    teleport_action = self.find_valid_interaction_point("OpenObject", object_id=recep['object_id'])
+                    if teleport_action is not None:
+                        event = self.env.step(teleport_action)
+                        event = self.env.step({'action': "OpenObject",
+                                               'objectId': recep['object_id'],
+                                               'forceAction': True})
+                        
                 self.receptacles[recep['object_id']]['closed'] = False
                 self.visible_objects, self.feedback = self.print_frame(recep, self.curr_loc)
                 action_feedback = "You open the %s. The %s is open. " % (target, target)

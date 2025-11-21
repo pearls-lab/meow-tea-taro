@@ -9,7 +9,7 @@ from alfred.env.thor_env import ThorEnv # type: ignore
 from alfworld.agents.controller import OracleAgent # type: ignore
 
 NUM_DATA = 1
-START = 61
+START = 719
 DATA_DIR = "/root/data/alfworld/train/"
 RAW_DIR = "/root/data/alfworld/raw/train"
 IMG_DIR = "/root/data/alfworld/train_images/"
@@ -28,12 +28,22 @@ class MockArgument:
 # Initialize environment once
 env = ThorEnv(x_display='0')
 
-for i in range(START, START + NUM_DATA+1):
-    traj_name = f"{TASK_PREFIX}_{i}"
+tasks_list = []
+with open("/root/task_ids_with_changes.json", "r") as f:
+    tasks_list = json.load(f)
+print(len(tasks_list))
 
-    if (Path(IMG_DIR) / traj_name).is_dir():
-        print(f"Folder {traj_name} exists, skipping...")
-        continue
+# for i in range(START, START + NUM_DATA):
+for i in range(len(tasks_list)):
+    # traj_name = f"{TASK_PREFIX}_{i}"
+    traj_name = tasks_list[i]
+    print(f"Processing trajectory: {traj_name}")
+
+    # if (Path(IMG_DIR) / traj_name).is_dir():
+    #     print(f"Folder {traj_name} exists, skipping...")
+    #     continue
+    with open("/root/data/alfworld/sft_info/pick_debug.txt", "a") as f:
+        f.write(f"Processing trajectory: {traj_name}\n")
     
     tw_file = os.path.join(DATA_DIR, f"{traj_name}.traj.json")
     with open(tw_file) as f:
