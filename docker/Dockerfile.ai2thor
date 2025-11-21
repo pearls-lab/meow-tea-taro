@@ -27,8 +27,8 @@ RUN bash miniconda.sh -b -p /root/miniconda3 && \
 RUN /root/miniconda3/bin/conda init bash
 RUN echo "source /root/miniconda3/bin/activate" >> ~/.bashrc
 
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+RUN /root/miniconda3/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    /root/miniconda3/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
 # Create AI2THOR environment with Python 3.6
 RUN /root/miniconda3/bin/conda create -y -n ai2thor python=3.6 && \
@@ -41,7 +41,7 @@ RUN source /root/miniconda3/bin/activate ai2thor && \
     PIP_CONSTRAINT= pip install --ignore-installed ai2thor==2.1.0 flask requests opencv-python-headless==4.5.3.56 pillow numpy pandas networkx h5py tqdm vocab revtok boto3
 
 # Install X display server and XVFB dependencies
-RUN apt-get update && apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl1-mesa mesa-utils
+RUN apt-get update && apt-get install -y libgl1-mesa-dri libglx-mesa0 libegl1-mesa mesa-utils pciutils
 RUN apt-get update && apt-get install -y xvfb x11-xkb-utils xfonts-base xfonts-75dpi
 
 # 2) Force everything to use Mesa software GL
