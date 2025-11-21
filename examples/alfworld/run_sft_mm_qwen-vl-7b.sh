@@ -4,11 +4,8 @@ export PATH="/usr/bin:$(echo $PATH | tr ':' '\n' | grep -v conda | tr '\n' ':' |
 export HYDRA_FULL_ERROR=1
 
 # DATA/TASK CONFIG
-env_name="alfworld"
-task_prefix="text_based"
-hf_data_repo="PEARLS-Lab/meow-tea-taro-dataset"
-hf_train_data_dir="$env_name/$task_prefix/multiturn_sft_data/100_data"
-local_train_data_dir="local/${hf_train_data_dir}"
+hf_data_repo="ruiyiwang/meow-tea-oolong-dataset"
+hf_train_data_dir="alfworld/task_1/train_parquet/train_both.parquet"
 local_parquet_dir="local/train_parquet"
 
 # MODEL AND TRAINING CONFIG
@@ -29,7 +26,7 @@ save_hf_repo_id="ruiyiwang/SFT-alfworld-visual-text-Qwen2.5-VL-7B-Instruct" # TO
 
 
 # Step 1: Process RL data
-echo "Processing multiturn SFT data for tasks ${env_name}-${task_prefix}"
+hf download $hf_data_repo $hf_train_data_dir --local-dir $local_parquet_dir --repo-type dataset
 
 # python3 -m meow_tea_train.agentic_utils.data_process.sft_data_processor \
 #     --hf_data_repo $hf_data_repo \
@@ -40,8 +37,8 @@ echo "Processing multiturn SFT data for tasks ${env_name}-${task_prefix}"
 
 torchrun --nnodes=1 --nproc_per_node=$nproc_per_node \
      -m verl.trainer.fsdp_sft_trainer \
-    data.train_files=$local_parquet_dir/train_visual.parquet \
-    data.val_files=$local_parquet_dir/train_visual.parquet \
+    data.train_files=$local_parquet_dir/$hf_train_data_dir \
+    data.val_files=$local_parquet_dir/$hf_train_data_dir \
     data.train_batch_size=$train_batch_size \
     data.micro_batch_size_per_gpu=$micro_batch_size_per_gpu \
     +data.chat_based.enable=true \
