@@ -17,52 +17,50 @@ env_name="swegym"
 # local_instances_dir="local/$hf_instances_dir"
 # local_train_data_dir="local/$hf_train_data_dir"
 local_parquet_dir="local/train_parquet"
-reward_method="single"
+reward_method="dense"
 
 # MODEL CONFIG
 hf_actor_repo_id=""
 hf_actor_model_path=""
 actor_model_path=local/model/actor
-base_model="Qwen/Qwen2.5-1.5B-Instruct"
+base_model="Qwen/Qwen3-8B"
 
 # AGENTIC CONFIG
 # env_name=... # from above
 is_multiturn=True
 is_async=True
-max_iter=8
+max_iter=25
 reward_density=$reward_method
 reward_type="verified"
-reward_manager="naive"
+reward_manager="agentic_heuristics"
 rollout_name="vllm"
 rollout_mode="async"
 
 # ALGORITHM CONFIG
-adv_estimator=grpo
-gamma=1.0
+adv_estimator=grpo_multi
+rollout_n=4
 
-use_kl_loss=False # Whether to use KL loss in objective. True for GRPO.
-use_kl_in_reward=True # Whether to use KL divergence in reward calculation.
-kl_coef=0.01
-clip_ratio=0.2
+use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
+use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
 
 # TRAINING CONFIG
 rollout_temp=0.7
 val_rollout_temp=0.4
-train_batch_size=8
-ppo_mini_batch_size=8
-max_num_batched_tokens=8192
-gpu_memory_utilization=0.5
-max_prompt_length=4096
-max_response_length=4096
+train_batch_size=16
+ppo_mini_batch_size=16
+max_num_batched_tokens=16384
+gpu_memory_utilization=0.7
+max_prompt_length=6144
+max_response_length=6144
 actor_lr=1e-6
 nnodes=1
-num_epochs=40
-save_freq=40 # per steps
+num_epochs=20
+save_freq=15 # per steps
 test_freq=5 # per steps
 
 # PROJECT CONFIG
-project_name="" # TODO (optional). WandB project name.
-experiment_name="" # TODO (optional). WandB experiment name.
+project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
+experiment_name="test-swegym" # TODO (optional). WandB experiment name.
 save_hf_repo_id="your-hf-repo-id" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
@@ -163,7 +161,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.rollout.temperature=$rollout_temp \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=$gpu_memory_utilization \
-    actor_rollout_ref.rollout.n=1 \
+    actor_rollout_ref.rollout.n=$rollout_n \
     actor_rollout_ref.rollout.max_num_batched_tokens=$max_num_batched_tokens \
     actor_rollout_ref.rollout.val_kwargs.temperature=$val_rollout_temp \
     reward_model.reward_manager=$reward_manager \

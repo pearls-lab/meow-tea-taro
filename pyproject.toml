@@ -24,7 +24,19 @@ classifiers = [
 dependencies = [
     "textworld",
     "alfworld",
-    "swe-rex"
+    "swe-rex",
+    "ghapi",
+    "pydantic-settings",
+    "ruamel.yaml",
+    "tenacity",
+    "unidiff",
+    "simple-parsing",
+    "rich-argparse",
+    "flask",
+    "flask-cors",
+    "flask-socketio",
+    "textual>=1.0.0",
+    "litellm"
 ]
 
 [project.optional-dependencies]
