@@ -96,6 +96,8 @@ class AdvantageEstimator(str, Enum):
 
     GAE = "gae"
     GRPO = "grpo"
+    GRPO_MULTI = "grpo_multi"
+    GRPO_MULTI_VECTORIZED = "grpo_multi_vectorized"
     REINFORCE_PLUS_PLUS = "reinforce_plus_plus"
     REINFORCE_PLUS_PLUS_BASELINE = "reinforce_plus_plus_baseline"
     REMAX = "remax"
@@ -415,6 +417,155 @@ def compute_grpo_passk_outcome_advantage(
 
     advantages = advantages.unsqueeze(-1) * response_mask
     return advantages, advantages
+
+# ============================================================================
+# New implementations added by meow-tea-taro
+# Copyright 2025 Ruiyi Wang, PEARLS Lab, UC San Diego
+# ============================================================================
+@register_adv_est(AdvantageEstimator.GRPO_MULTI)
+def compute_grpo_multi_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    epsilon: float = 1e-6,
+    norm_adv_by_std_in_grpo: bool = False,
+    config: Optional[AlgoConfig] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute advantage for multi-turn GRPO. 
+    Implementation adapted from: https://ai.meta.com/research/publications/cwm-an-open-weights-llm-for-research-on-code-generation-with-world-models/
+    We use fixed batch size here for simplicity.
+
+    Formula: for (y_1, y_2, ..., y_G) in group g, 
+        L_i = \\sum_t{Mask(i, t)}
+        mu = 1 / \\sum_i{L_i} * \\sum_i{R_i * L_i}
+        A_i = (R_i - mu) * L_i
+        A_{i, t} = A_i * Mask(i, t)
+
+    Args:
+        token_level_rewards: `(torch.Tensor)`
+            shape is (bs, response_length)
+        response_mask: `(torch.Tensor)`
+            shape is (bs, response_length)
+        index: `(np.ndarray)`
+            index array for grouping
+        epsilon: `(float)`
+            small value to avoid division by zero
+        norm_adv_by_std_in_grpo: `(bool)`
+            whether to scale the GRPO advantage
+        config: `(Optional[AlgoConfig])`
+            algorithm configuration object
+
+    Returns:
+        advantages: `(torch.Tensor)`
+            shape is (bs, response_length)
+        Returns: `(torch.Tensor)`
+            shape is (bs, response_length)
+    """
+    # 1. Calculate Total Return (Ri) per trajectory
+    total_return = token_level_rewards.sum(dim=-1) # (bs,) -> R_i
+
+    # 2. Calculate Token Counts (Li) per trajectory
+    lengths = response_mask.sum(dim=-1) # (bs,) -> L_i
+    id2stats = defaultdict(lambda: {"weighted_sum": 0.0, "total_len": 0.0, "raw_returns": []})
+    bsz = total_return.shape[0]
+
+    # 3. Aggregate statistics per group
+    with torch.no_grad():
+        for i in range(bsz):
+            idx = index[i]
+            id2stats[idx]["weighted_sum"] += total_return[i] * lengths[i]
+            id2stats[idx]["total_len"] += lengths[i]
+            id2stats[idx]["raw_returns"].append(total_return[i])
+        for idx in id2stats:
+            if len(id2stats[idx]["raw_returns"]) < 2:
+                raise ValueError(f"At least 2 samples are required per group for GRPO-Multi. Got {len(id2stats[idx]['raw_returns'])} for group {idx}.")
+            elif len(id2stats[idx]["raw_returns"]) > 1:
+                id2stats[idx]["raw_returns"] = torch.stack(id2stats[idx]["raw_returns"])
+            else:
+                raise ValueError(f"No score in prompt index: {idx}.")
+
+        # 4. Compute weighted mean per group
+        id2mean = {}
+        for idx, stats in id2stats.items():
+            if stats["total_len"] == 0:
+                id2mean[idx] = 0.0 # Fallback for empty/all-masked rows
+            else:
+                id2mean[idx] = stats["weighted_sum"] / (stats["total_len"] + epsilon)
+
+        # 5. Compute advantages
+        advantages = torch.zeros_like(total_return)
+        for i in range(bsz):
+            idx = index[i]
+            mu = id2mean[idx]
+            advantages[i] = total_return[i] - mu
+
+        # 6. Broadcast and Mask
+        # Expand scalar advantage (bs,) -> (bs, seq_len)
+        # Apply mask: The advantage applies to Action tokens, but is 0 for Observations/Pad.
+        advantages = advantages.unsqueeze(-1) * response_mask
+
+        return advantages, advantages
+
+
+@register_adv_est(AdvantageEstimator.GRPO_MULTI_VECTORIZED)
+def compute_grpo_multi_vectorized_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    epsilon: float = 1e-6,
+    norm_adv_by_std_in_grpo: bool = False,
+    config: Optional[AlgoConfig] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute advantage for multi-turn GRPO (vectorized version). 
+    Implementation adapted from: https://ai.meta.com/research/publications/cwm-an-open-weights-llm-for-research-on-code-generation-with-world-models/
+    We use fixed batch size here for simplicity.
+
+    Formula: for (y_1, y_2, ..., y_G) in group g, 
+        L_i = \\sum_t{Mask(i, t)}
+        mu = 1 / \\sum_i{L_i} * \\sum_i{R_i * L_i} -> length-weighted mean of returns
+        A_i = (R_i - mu) * L_i
+        A_{i, t} = A_i * Mask(i, t)
+    """
+    with torch.no_grad():
+        # 1. Prepare Data
+        total_return = token_level_rewards.sum(dim=-1) # (bs,) -> R_i
+        lengths = response_mask.sum(dim=-1) # (bs,) -> L_i
+
+        # Convert index to tensor on GPU
+        g = as_torch_index(index, device=total_return.device)
+        num_groups = g.max().item() + 1
+
+        # 2. Vectorized Weighted Mean Calculation
+        # We need to sum (R * L) and (L) separately for each group.
+        # Buffers to hold group sums
+        # Shape: (num_groups,)
+        group_weighted_sum = torch.zeros(num_groups, device=total_return.device, dtype=total_return.dtype)
+        group_total_len = torch.zeros(num_groups, device=total_return.device, dtype=total_return.dtype)
+
+        # Numerator contributions: R_i * L_i
+        numerator = total_return * lengths
+
+        # Scatter Add: "For every sample, add its value to its group's bin"
+        # This replaces the Python loop
+        group_weighted_sum.scatter_add_(0, g, numerator)
+        group_total_len.scatter_add_(0, g, lengths)
+
+        # Calculate Weighted Mean per group
+        # µ_g = sum(R*L) / sum(L)
+        group_mu = group_weighted_sum / (group_total_len + epsilon)
+
+        # 3. Broadcast and Compute Advantage
+        # Map group means back to individual samples
+        # broadcast_mu has shape (bs,)
+        broadcast_mu = group_mu[g]
+
+        # Calculate Scalar Advantage: A_i = R_i - µ
+        advantages = total_return - broadcast_mu
+        advantages = advantages.unsqueeze(-1) * response_mask
+
+        return advantages, advantages
 
 
 @register_adv_est(
