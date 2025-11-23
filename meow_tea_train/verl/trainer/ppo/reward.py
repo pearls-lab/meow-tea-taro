@@ -34,7 +34,13 @@ from verl.workers.reward_manager.abstract import AbstractRewardManager, RawRewar
 # NOTE from meow-tea: Import custom reward managers to ensure they are registered
 try:
     from meow_tea_train.agentic_utils.reward_manager.agentic_verified import AgenticVerifiedRewardManager
-except ImportError:
+except ImportError as e:
+    print(f"Failed to import AgenticVerifiedRewardManager: {e}")
+    pass
+try:
+    from meow_tea_train.agentic_utils.reward_manager.agentic_heuristics import AgenticHeuristicsRewardManager
+except ImportError as e:
+    print(f"Failed to import AgenticHeuristicsRewardManager: {e}")
     pass
 
 

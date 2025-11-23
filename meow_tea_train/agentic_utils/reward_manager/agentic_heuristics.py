@@ -25,12 +25,12 @@ from verl.experimental.reward.reward_loop import register as register_experiment
 from verl.experimental.reward.reward_loop.base import RewardLoopManagerBase
 
 
-@register("agentic_verified")
-class AgenticVerifiedRewardManager:
+@register("agentic_heuristics")
+class AgenticHeuristicsRewardManager:
     """The reward manager design for multi-turn agentic tasks with verified feedback."""
 
     def __init__(self, tokenizer, num_examine, compute_score=None, reward_fn_key="data_source", **kwargs) -> None:
-        print("Initialized AgenticVerifiedRewardManager")
+        print("Initialized AgenticHeuristicsRewardManager")
         self.tokenizer = tokenizer
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.compute_score = compute_score or _default_compute_score
@@ -121,39 +121,40 @@ class AgenticVerifiedRewardManager:
             return reward_tensor
 
 
-@register_experimental("agentic_verified")
-class AgenticVerifiedRewardLoopManager(RewardLoopManagerBase):
-    """The reward loop manager for agentic verified tasks."""
+@register_experimental("agentic_heuristics")
+class AgenticHeuristicsRewardLoopManager(RewardLoopManagerBase):
+    """The reward loop manager for agentic heuristics tasks."""
 
     def __init__(self, config, tokenizer, compute_score=None, reward_router_address=None, reward_model_tokenizer=None):
         super().__init__(config, tokenizer)
+        print("Initialized AgenticHeuristicsRewardLoopManager")
         self.num_examine = 1
         self.reward_fn_key = config.data.get("reward_fn_key", "data_source")
         self.already_print_data_sources = {}
 
     async def run_single(self, data: DataProto) -> dict:
         data_item = data[0]
-        
+
         prompt_ids = data_item.batch["prompts"]
         prompt_length = prompt_ids.shape[-1]
         valid_prompt_length = data_item.batch["attention_mask"][:prompt_length].sum()
         valid_prompt_ids = prompt_ids[-valid_prompt_length:]
-        
+
         response_ids = data_item.batch["responses"]
         valid_response_length = data_item.batch["attention_mask"][prompt_length:].sum()
         valid_response_ids = response_ids[:valid_response_length]
-        
+
         prompt_str = self.tokenizer.decode(valid_prompt_ids, skip_special_tokens=True)
         response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=True)
-        
+
         final_score = data_item.non_tensor_batch["final_rewards"]
-        
+
         data_source = data_item.non_tensor_batch.get(self.reward_fn_key, "unknown")
         ground_truth = data_item.non_tensor_batch.get("extra_info", {}).get("response", "unknown")
-        
+
         if data_source not in self.already_print_data_sources:
             self.already_print_data_sources[data_source] = 0
-            
+
         if self.already_print_data_sources[data_source] < self.num_examine:
             self.already_print_data_sources[data_source] += 1
             print("[prompt]", prompt_str)
@@ -164,11 +165,11 @@ class AgenticVerifiedRewardLoopManager(RewardLoopManagerBase):
                     print(f"[{key}]", value)
             else:
                 print("[score]", final_score)
-                
+
         # Ensure final_score is a float for the return value
         reward_score = final_score
         if isinstance(final_score, dict):
-             # If it's a dict, we can't return it as the single scalar score. 
+             # If it's a dict, we can't return it as the single scalar score.
              # Assuming there's a 'score' key or similar, or we just return 0.0 and rely on extra_info
              reward_score = final_score.get('score', 0.0)
 

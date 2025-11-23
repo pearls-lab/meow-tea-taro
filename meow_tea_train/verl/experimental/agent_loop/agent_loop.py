@@ -135,6 +135,10 @@ class AgentLoopOutput(BaseModel):
     """Multi-modal data for multi-modal tools."""
     reward_score: Optional[float] = None
     """Reward score for the trajectory."""
+    final_rewards: Optional[float] = None
+    """Final reward for the trajectory. Same as reward_score if no intermediate rewards."""
+    interm_rewards: Optional[list[float]] = None
+    """Intermediate rewards for the trajectory."""
     num_turns: int = 0
     """Number of chat turns, including user, assistant, tool."""
     metrics: AgentLoopMetrics
@@ -344,7 +348,9 @@ class AgentLoopWorkerBase:
             default_agent_loop = config.agent.default_agent_loop
             batch.non_tensor_batch["agent_name"] = np.array([default_agent_loop] * len(batch), dtype=object)
 
-        if "index" in batch.non_tensor_batch:
+        if "uid" in batch.non_tensor_batch:
+            index = batch.non_tensor_batch["uid"]
+        elif "index" in batch.non_tensor_batch:
             index = batch.non_tensor_batch["index"]
         else:
             index = np.arange(len(batch))
@@ -360,6 +366,9 @@ class AgentLoopWorkerBase:
         outputs = await asyncio.gather(*tasks)
 
         output = self._postprocess(outputs)
+        with open("debug_output.log", "a") as f:
+            f.write(str(output))
+            f.write("\n")
         return output
 
     async def _run_agent_loop(
@@ -389,7 +398,10 @@ class AgentLoopWorkerBase:
                 tokenizer=self.tokenizer,
                 processor=self.processor,
             )
-            output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
+            output: AgentLoopOutput = await agent_loop.run(sampling_params, trajectory, **kwargs)
+
+            if "uid" in kwargs:
+                output.extra_fields["uid"] = kwargs["uid"]
 
             # Some AgentLoop may have already computed the reward score, e.g SWE-agent.
 
@@ -411,6 +423,10 @@ class AgentLoopWorkerBase:
             #   e.g., [0,0,0,0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,0,0,0,0]
 
             self.tokenizer.padding_side = "left"
+            if len(output.prompt_ids) > self.config.actor_rollout_ref.rollout.prompt_length:
+                logger.warning(f"Truncating prompt_ids from {len(output.prompt_ids)} to {self.config.actor_rollout_ref.rollout.prompt_length}")
+                output.prompt_ids = output.prompt_ids[-self.config.actor_rollout_ref.rollout.prompt_length:]
+
             prompt_output = self.tokenizer.pad(
                 {"input_ids": output.prompt_ids},
                 padding="max_length",
@@ -423,6 +439,11 @@ class AgentLoopWorkerBase:
                 prompt_output["attention_mask"] = prompt_output["attention_mask"].unsqueeze(0)
 
             self.tokenizer.padding_side = "right"
+            if len(output.response_ids) > self.config.actor_rollout_ref.rollout.response_length:
+                logger.warning(f"Truncating response_ids from {len(output.response_ids)} to {self.config.actor_rollout_ref.rollout.response_length}")
+                output.response_ids = output.response_ids[:self.config.actor_rollout_ref.rollout.response_length]
+                output.response_mask = output.response_mask[:self.config.actor_rollout_ref.rollout.response_length]
+
             response_output = self.tokenizer.pad(
                 {"input_ids": output.response_ids},
                 padding="max_length",
@@ -535,6 +556,7 @@ class AgentLoopWorkerBase:
                 multi_modal_inputs=multi_modal_inputs,
                 multi_modal_data=output.multi_modal_data,
                 reward_score=output.reward_score,
+                final_rewards=output.final_rewards,
                 num_turns=output.num_turns,
                 metrics=output.metrics,
                 extra_fields=output.extra_fields,
@@ -578,6 +600,7 @@ class AgentLoopWorkerBase:
         non_tensor_batch = {
             "__num_turns__": np.array([input.num_turns for input in inputs], dtype=np.int32),
         }
+        non_tensor_batch["final_rewards"] = np.array([input.final_rewards for input in inputs], dtype=np.float32)
 
         # add reward_extra_info to non_tensor_batch
         reward_extra_infos = [input.extra_fields.get("reward_extra_info", {}) for input in inputs]
@@ -600,6 +623,7 @@ class AgentLoopWorkerBase:
             extra_fields[key] = temp_arr
 
         non_tensor_batch.update(extra_fields)
+        print("Generated non_tensor_batch:", non_tensor_batch)
         return DataProto(
             batch=batch,
             non_tensor_batch=non_tensor_batch,

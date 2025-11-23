@@ -9,10 +9,12 @@ import json
 import yaml
 import logging
 import time
+import random
+import asyncio
 
-from sweagent.environment.swe_env import SWEEnv
-from sweagent.run.common import save_predictions
-from sweagent.run.evaluate import evaluate_instance
+from sweagent.environment.swe_env import SWEEnv # type: ignore
+from sweagent.run.common import save_predictions # type: ignore
+from sweagent.run.evaluate import evaluate_instance # type: ignore
 from verl.utils.rollout_trace import rollout_trace_op
 from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, AgentLoopMetrics, register
 from .env_wrapper import batch_instance_from_dict, remove_runtime_root
@@ -53,7 +55,6 @@ def sweagent_run_remote(
     global_step: int = 0,
     training_phase: str = "train",
     repetition_id: int = 0,
-    **kwargs
 ) -> tuple[list[dict[str, str]], float, Optional[str]]:
     """
     Ray remote task that runs a single SWE-agent trajectory in isolation.
@@ -123,6 +124,10 @@ def sweagent_run_remote(
     try:
         # Create SWEEnv
         env = SWEEnv.from_config(batch_instance.env)
+        
+        # Stagger start times to avoid Conda lock contention
+        time.sleep(random.uniform(0, 5))
+        
         # Start environment
         with silence_stdout_hard():
             env.start()
@@ -284,7 +289,7 @@ class SWEAgentLoop(AgentLoopBase):
 
     
     @rollout_trace_op
-    async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
+    async def run(self, sampling_params: dict[str, Any], trajectory_info: dict[str, Any], **kwargs) -> AgentLoopOutput:
         """
         Main entry point for running a single SWE-agent trajectory.
 
@@ -293,7 +298,7 @@ class SWEAgentLoop(AgentLoopBase):
         then formats the results into AgentLoopOutput format.
         
         The workflow:
-        1. Extract instance data from kwargs
+        1. Extract instance data from kwargs["instance"]
         2. Generate unique request_id for session affinity
         3. Launch Ray task (sweagent_run_remote) with all necessary info
         4. Await results (messages, reward, error)
@@ -301,10 +306,13 @@ class SWEAgentLoop(AgentLoopBase):
 
         Args:
             sampling_params: vLLM sampling parameters (temperature, top_p, max_tokens, etc.)
+            trajectory_info: Information about the trajectory to run
+                - step: Current training step
+                - validate: Whether this is an evaluation trajectory
+                - sample_index: uid of the sample in the batch
+                - rollout_n: trajectory repetition number (for n_samples > 1)
             **kwargs: Additional arguments containing:
-                - extra_info["instance"]: SWE-Gym/SWE-bench or other instance data
-                - extra_info["repetition_id"]: Trajectory repetition number (for n_samples > 1)
-                - extra_info["global_step"]: Training iteration number
+                - instance: SWE-Gym/SWE-bench or other instance data
 
         Returns:
             AgentLoopOutput with:
@@ -321,9 +329,10 @@ class SWEAgentLoop(AgentLoopBase):
         instance = kwargs["instance"]
         
         # Determine output directory
-        global_step = kwargs["extra_info"].get("global_step", 0)
-        repetition_id = kwargs["extra_info"].get("repetition_id", 0)
-        training_phase = "eval" if kwargs["extra_info"].get("validate", False) else "train"
+        global_step = trajectory_info.get("step", 0)
+        repetition_id = trajectory_info.get("rollout_n", 0)
+        training_phase = "eval" if trajectory_info.get("validate", False) else "train"
+        uid = trajectory_info.get("sample_index", "unknown")
         # output_base_dir = Path(self.sweagent_traj_dir) / f"step_{global_step}" / training_phase
         
         # Run SWE-agent remotely
@@ -345,7 +354,7 @@ class SWEAgentLoop(AgentLoopBase):
             # Return empty trajectory on failure
             if error:
                 logger.warning(f"Error in SWE-Agent execution: {error}")
-            return self._create_empty_trajectory(kwargs.get("raw_prompt", []), error)
+            return self._create_empty_trajectory(kwargs.get("raw_prompt", []), error, uid)
         
         # Process messages to extract prompt_ids and response_ids
         # Assume first 2 messages are system + user (initial prompt)
@@ -398,6 +407,10 @@ class SWEAgentLoop(AgentLoopBase):
         # Truncate to response_length
         response_ids = response_ids[:self.response_length]
         response_mask = response_mask[:self.response_length]
+
+        # Add to extra_fields
+        extra_fields = {"error": error}
+        extra_fields["uid"] = uid
         
         # Create output
         output = AgentLoopOutput(
@@ -406,159 +419,18 @@ class SWEAgentLoop(AgentLoopBase):
             response_mask=response_mask,
             response_logprobs=None,  # SWE-agent doesn't provide logprobs
             reward_score=reward,
+            final_rewards=reward,
             num_turns=len(messages) // 2,  # Approximate turns
             metrics=AgentLoopMetrics(
                 generate_sequences=len(response_messages),
                 tool_calls=0,  # SWE-agent uses tools but we don't track separately here
             ),
-            extra_fields={"error": error} if error else {},
-        )
-        
-        return output
-
-    def _format_output(
-        self,
-        messages: list[dict[str, str]],
-        reward: float,
-        error: Optional[str],
-        metrics: dict[str, float]
-    ) -> AgentLoopOutput:
-        """
-        Convert SWE-Agent output into VeRL's AgentLoopOutput format.
-        
-        This method handles tokenization and mask creation for the trajectory.
-        It ensures that model-generated tokens are marked with mask=1 (trained on)
-        and observation tokens are marked with mask=0 (not trained on).
-        
-        Message structure:
-            messages[0]: System message (part of prompt)
-            messages[1]: Initial user message with problem statement (part of prompt)
-            messages[2:]: Agent turns (assistant + user observations)
-        
-        Args:
-            messages: Full conversation history from SWE-Agent
-            reward: Binary reward (0.0 or 1.0) based on test pass/fail
-            error: Optional error message if execution failed
-            metrics: Performance metrics (timing, token counts, etc.)
-        
-        Returns:
-            AgentLoopOutput with properly formatted tokens and masks
-        """
-        if not messages or len(messages) < 2:
-            # Handle empty or invalid message list
-            logger.warning("Received empty or invalid messages, returning empty output")
-            return AgentLoopOutput(
-                prompt_ids=[],
-                response_ids=[],
-                response_mask=[],
-                response_logprobs=None,
-                reward_score=0.0,
-                num_turns=0,
-                metrics=AgentLoopMetrics(
-                    generate_sequences=metrics.get("generate_sequences", 0.0),
-                    tool_calls=metrics.get("tool_calls", 0.0),
-                ),
-                extra_fields={"error": error} if error else {},
-            )
-        
-        # Separate prompt (first 2 messages) from response (rest)
-        # messages[0]: System prompt
-        # messages[1]: Initial user message (problem statement)
-        initial_messages = messages[:2]
-        response_messages = messages[2:]
-        
-        # Tokenize initial prompt
-        prompt_ids = self.tokenizer.apply_chat_template(
-            initial_messages,
-            add_generation_prompt=False,  # Don't add generation prompt yet
-            tokenize=True,
-            **self.apply_chat_template_kwargs
-        )
-        
-        # Process response messages
-        # We need to:
-        # 1. Tokenize each message
-        # 2. Create masks (1 for assistant, 0 for user/observations)
-        # 3. Build cumulative token lists
-        response_ids = []
-        response_mask = []
-        response_logprobs = []
-        
-        for i, msg in enumerate(response_messages):
-            # Tokenize this message
-            # For multi-turn, we need to apply chat template incrementally
-            # to preserve the conversation structure
-            
-            if i == 0:
-                # First response message: need generation prompt
-                msg_ids = self.tokenizer.apply_chat_template(
-                    [msg],
-                    add_generation_prompt=(msg["role"] == "user"),  # Add if next is assistant
-                    tokenize=True,
-                    **self.apply_chat_template_kwargs
-                )
-                # Remove system prompt tokens if present
-                if len(msg_ids) > len(self.system_prompt_tokens):
-                    msg_ids = msg_ids[len(self.system_prompt_tokens):]
-            else:
-                # Subsequent messages: apply template normally
-                msg_ids = self.tokenizer.apply_chat_template(
-                    [msg],
-                    add_generation_prompt=(i < len(response_messages) - 1 and response_messages[i + 1]["role"] == "assistant"),
-                    tokenize=True,
-                    **self.apply_chat_template_kwargs
-                )
-                # Remove system prompt tokens
-                if len(msg_ids) > len(self.system_prompt_tokens):
-                    msg_ids = msg_ids[len(self.system_prompt_tokens):]
-            
-            # Add tokens to response
-            response_ids.extend(msg_ids)
-            
-            # Create mask:
-            # - 1 for assistant messages (model-generated, train on these)
-            # - 0 for user messages (observations, don't train on these)
-            if msg["role"] == "assistant":
-                response_mask.extend([1] * len(msg_ids))
-            else:  # user role (observations from environment)
-                response_mask.extend([0] * len(msg_ids))
-            
-            # Placeholder logprobs (would need to be populated by model if tracking)
-            response_logprobs.extend([0.0] * len(msg_ids))
-        
-        # Truncate to maximum response length
-        # This is important to keep sequences at a manageable size
-        response_ids = response_ids[:self.response_length]
-        response_mask = response_mask[:self.response_length]
-        response_logprobs = response_logprobs[:self.response_length]
-        
-        # Count number of turns (assistant messages only)
-        num_turns = sum(1 for msg in response_messages if msg["role"] == "assistant")
-        
-        # Create AgentLoopOutput
-        output = AgentLoopOutput(
-            prompt_ids=prompt_ids,
-            response_ids=response_ids,
-            response_mask=response_mask,
-            response_logprobs=response_logprobs if any(response_logprobs) else None,
-            reward_score=reward,
-            num_turns=num_turns,
-            metrics=AgentLoopMetrics(
-                generate_sequences=metrics.get("generate_sequences", 0.0),
-                tool_calls=metrics.get("tool_calls", 0.0),
-            ),
-            extra_fields={"error": error} if error else {},
-        )
-        
-        logger.info(
-            f"Formatted output: prompt_len={len(prompt_ids)}, "
-            f"response_len={len(response_ids)}, num_turns={num_turns}, "
-            f"reward={reward}"
+            extra_fields=extra_fields,
         )
         
         return output
     
-    def _create_empty_trajectory(self, raw_prompt: list, error: str) -> AgentLoopOutput:
+    def _create_empty_trajectory(self, raw_prompt: list, error: str, uid: str = None) -> AgentLoopOutput:
         """Create an empty/dummy trajectory for failed cases."""
         failure_message = [{"role": "assistant", "content": f"Failed: {error or 'Unknown error'}"}]
         
@@ -578,6 +450,8 @@ class SWEAgentLoop(AgentLoopBase):
         
         response_mask = [1] * len(response_ids)
         
+        extra_fields = {"error": error, "uid": uid}
+
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids,
@@ -586,5 +460,5 @@ class SWEAgentLoop(AgentLoopBase):
             reward_score=0.0,
             num_turns=1,
             metrics=AgentLoopMetrics(generate_sequences=0, tool_calls=0),
-            extra_fields={"error": error},
+            extra_fields=extra_fields,
         )
