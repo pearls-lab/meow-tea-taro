@@ -115,6 +115,11 @@ def sweagent_run_remote(
     # Also set conda root inside runtime (for conda env management)
     batch_instance.env.deployment.conda_root = str(runtime_root / ".conda")
 
+    # Force clear_conda_workspace to False to prevent deletion of repo on env.close()
+    # This allows evaluate_instance to reuse the repo without re-cloning.
+    if hasattr(batch_instance.env.deployment, "clear_conda_workspace"):
+        batch_instance.env.deployment.clear_conda_workspace = False
+
     agent = None
     env = None
     result = None
@@ -125,7 +130,7 @@ def sweagent_run_remote(
         # Create SWEEnv
         env = SWEEnv.from_config(batch_instance.env)
         
-        # Stagger start times to avoid Conda lock contention
+        # Stagger start times slightly to avoid thundering herd on conda package cache
         time.sleep(random.uniform(0, 5))
         
         # Start environment
@@ -192,12 +197,21 @@ def sweagent_run_remote(
     if agent is not None:
         try:
             logger.info(f"Evaluating {instance_id}")
-            with silence_stdout_hard():
-                eval_summary = evaluate_instance(
-                    instance=batch_instance,
-                    output_dir=output_dir,
-                    timeout=600,
-                )
+            # Retry evaluation up to 3 times
+            for attempt in range(3):
+                try:
+                    with silence_stdout_hard():
+                        eval_summary = evaluate_instance(
+                            instance=batch_instance,
+                            output_dir=output_dir,
+                            timeout=600,
+                        )
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if attempt == 2:  # Last attempt
+                        raise e
+                    logger.warning(f"Evaluation attempt {attempt + 1} failed for {instance_id}: {e}. Retrying...")
+                    time.sleep(random.uniform(2, 5))
             
             # Write eval summary to output dir
             if eval_summary:
@@ -336,19 +350,23 @@ class SWEAgentLoop(AgentLoopBase):
         # output_base_dir = Path(self.sweagent_traj_dir) / f"step_{global_step}" / training_phase
         
         # Run SWE-agent remotely
-        messages, reward, error = await sweagent_run_remote.remote(
-            instance=instance,
-            sweagent_config=self.sweagent_config,
-            sampling_params=sampling_params,
-            server_manager=self.server_manager,
-            tokenizer=self.tokenizer,
-            max_iter=self.max_iter,
-            request_id=request_id,
-            trajs_save_dir=self.trajs_save_dir,
-            global_step=global_step,
-            training_phase=training_phase,
-            repetition_id=repetition_id,
-        )
+        try:
+            messages, reward, error = await sweagent_run_remote.remote(
+                instance=instance,
+                sweagent_config=self.sweagent_config,
+                sampling_params=sampling_params,
+                server_manager=self.server_manager,
+                tokenizer=self.tokenizer,
+                max_iter=self.max_iter,
+                request_id=request_id,
+                trajs_save_dir=self.trajs_save_dir,
+                global_step=global_step,
+                training_phase=training_phase,
+                repetition_id=repetition_id,
+            )
+        except Exception as e:
+            logger.error(f"Fatal error in SWE-agent remote task for {uid}: {e}")
+            return self._create_empty_trajectory(kwargs.get("raw_prompt", []), f"Remote task failed: {e}", uid)
 
         if not messages or error:
             # Return empty trajectory on failure
