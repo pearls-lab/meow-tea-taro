@@ -126,9 +126,9 @@ class CondaDeployment(AbstractDeployment):
     async def start(self):
         self._accept_conda_tos()
         
-        # Use file lock to serialize conda environment creation
-        with self._acquire_conda_lock():
-            self._ensure_conda_env()
+        # Removed global lock to allow parallel environment creation.
+        # We rely on unique prefixes and conda's internal package cache locking.
+        self._ensure_conda_env()
         
         self._write_rcfile()
         self._runtime = LocalRuntime(logger=self.logger)
@@ -142,26 +142,12 @@ class CondaDeployment(AbstractDeployment):
                 self.fd = None
 
             def __enter__(self):
-                self.logger.info(f"Acquiring conda lock at {self.lock_file}")
-                self.fd = open(self.lock_file, 'w')
-                # Use exclusive lock with timeout
-                max_wait = 300  # 5 minutes
-                start = time.time()
-                while True:
-                    try:
-                        fcntl.flock(self.fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        self.logger.info("Conda lock acquired")
-                        return self
-                    except BlockingIOError:
-                        if time.time() - start > max_wait:
-                            raise TimeoutError(f"Could not acquire conda lock after {max_wait}s")
-                        time.sleep(0.5)
+                # No-op: locking is disabled to allow parallel environment creation
+                return self
 
             def __exit__(self, exc_type, exc_val, exc_tb):
-                if self.fd:
-                    fcntl.flock(self.fd.fileno(), fcntl.LOCK_UN)
-                    self.fd.close()
-                    self.logger.info("Conda lock released")
+                # No-op
+                pass
 
         return FileLock(self._CONDA_LOCK_FILE, self.logger)
 
@@ -226,25 +212,47 @@ class CondaDeployment(AbstractDeployment):
         is_new = not (self._env_prefix / "conda-meta").exists()
 
         env = os.environ.copy()
+        # Increase internal lock timeout for conda to reduce immediate failures
+        env["CONDA_LOCK_TIMEOUT"] = "300"
         # Don't override CONDA_PKGS_DIRS - use conda's default with proper locking
 
         if is_new:
             args = [conda, "create", "-y", "-p", prefix, f"python={self._config.python}"]
             for ch in self._config.channels:
                 args += ["-c", ch]
-            self._run(args, "creating conda environment", env=env)
+            self._run_with_retry(args, "creating conda environment", env=env)
 
         if self._config.packages:
             args = [conda, "install", "-y", "-p", prefix, *self._config.packages]
             for ch in self._config.channels:
                 args += ["-c", ch]
-            self._run(args, "installing conda packages", env=env)
+            self._run_with_retry(args, "installing conda packages", env=env)
 
         if is_new and self._config.post_create_commands:
             for cmd in self._config.post_create_commands:
                 env2 = env.copy()
                 env2["PIP_CACHE_DIR"] = str(self._pip_cache)
+                env2["CONDA_LOCK_TIMEOUT"] = "300"
                 self._run([conda, "run", "-p", prefix, "bash", "-lc", cmd], f"post-create: {cmd}", env=env2)
+
+    def _run_with_retry(self, args: list[str], info: str, env: dict[str, str] | None = None, retries: int = 20, delay: float = 5.0, max_delay: float = 30.0):
+        """Run a command with retries to handle transient failures (e.g. network, locking)."""
+        import random
+        for i in range(retries):
+            try:
+                # Only log full failure output on the last attempt
+                is_last_attempt = (i == retries - 1)
+                self._run(args, info, env=env, log_failure=is_last_attempt)
+                return
+            except RuntimeError as e:
+                if i == retries - 1:
+                    raise
+                
+                # Exponential backoff with jitter, capped at max_delay
+                backoff = min(delay * (1.5 ** i), max_delay)
+                sleep_time = backoff + random.uniform(0, 5)
+                self.logger.warning(f"Attempt {i+1}/{retries} failed for {info}: {e}. Retrying in {sleep_time:.2f}s...")
+                time.sleep(sleep_time)
 
     def _conda_remove_env(self):
         conda = self._resolve_conda_exe()
@@ -305,10 +313,11 @@ conda activate "{prefix}"
 """.strip() + "\n"
         self._rcfile_path.write_text(content, encoding="utf-8")
 
-    def _run(self, args: list[str], info: str, env: dict[str, str] | None = None, check: bool = True):
+    def _run(self, args: list[str], info: str, env: dict[str, str] | None = None, check: bool = True, log_failure: bool = True):
         self.logger.info("CondaDeployment: %s: %s", info, " ".join(args))
         proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         if check and proc.returncode != 0:
-            self.logger.error("Command failed (%s):\n%s", info, proc.stdout)
+            if log_failure:
+                self.logger.error("Command failed (%s):\n%s", info, proc.stdout)
             raise RuntimeError(f"CondaDeployment failed while {info}. Exit code {proc.returncode}")
         self.logger.debug(proc.stdout)

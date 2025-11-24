@@ -34,7 +34,7 @@ def _get_git_reset_commands(base_commit: str) -> list[str]:
         "git restore .",
         "git reset --hard",
         f"git checkout {base_commit}",
-        "git clean -fdq",
+        "git clean -fdqx",
     ]
 
 

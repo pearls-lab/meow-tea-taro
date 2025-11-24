@@ -150,16 +150,32 @@ class SWEEnv:
 
             base_commit = getattr(self.repo, "base_commit", "HEAD")
 
-            cmd = " && ".join(
-                [
-                    f"mkdir -p {shlex.quote(repo_dir)}",
-                    f"cd {shlex.quote(repo_dir)}",
-                    "git init",
-                    f"git remote add origin {shlex.quote(url)}",
-                    f"git fetch origin {shlex.quote(str(base_commit))}",
-                    "git checkout -f FETCH_HEAD",
-                ]
-            )
+            # Check if .git exists to avoid re-cloning
+            git_dir = f"{repo_dir}/.git"
+            check_git = self.communicate(f"[ -d {shlex.quote(git_dir)} ] && echo 'EXISTS' || echo 'MISSING'", check="ignore").strip()
+            
+            if "EXISTS" in check_git:
+                # Repo exists, just fetch and checkout
+                cmd = " && ".join(
+                    [
+                        f"cd {shlex.quote(repo_dir)}",
+                        f"git fetch origin {shlex.quote(str(base_commit))}",
+                        "git checkout -f FETCH_HEAD",
+                    ]
+                )
+            else:
+                # Full clone
+                cmd = " && ".join(
+                    [
+                        f"mkdir -p {shlex.quote(repo_dir)}",
+                        f"cd {shlex.quote(repo_dir)}",
+                        "git init",
+                        f"git remote add origin {shlex.quote(url)}",
+                        f"git fetch origin {shlex.quote(str(base_commit))}",
+                        "git checkout -f FETCH_HEAD",
+                    ]
+                )
+            
             self.communicate(
                 input=cmd,
                 check="raise",
