@@ -8,28 +8,25 @@ export HYDRA_FULL_ERROR=1
 
 # DATA/TASK CONFIG
 env_name="swegym"
-# task_prefix="w2-o3-q4"
-# instance_id_start=50001
-# instance_id_end=51000
-# hf_data_repo="PEARLS-Lab/meow-tea-taro-dataset"
-# hf_instances_dir="textworld/w2-o3-q4/instances"
-# hf_train_data_dir="textworld/w2-o3-q4/multiturn_rl_data/1000_train_data"
-# local_instances_dir="local/$hf_instances_dir"
-# local_train_data_dir="local/$hf_train_data_dir"
+hf_data_repo=$HF_DATA_REPO
+hf_train_data_dir=$HF_TRAIN_DATA_DIR
+hf_val_data_dir=$HF_VAL_DATA_DIR
 local_parquet_dir="local/train_parquet"
+train_parquet=$local_parquet_dir/$hf_train_data_dir/$TRAIN_PARQUET_FILE
+val_parquet=$local_parquet_dir/$hf_val_data_dir/$VAL_PARQUET_FILE
 reward_method="dense"
 
 # MODEL CONFIG
 hf_actor_repo_id=""
 hf_actor_model_path=""
 actor_model_path=local/model/actor
-base_model="Qwen/Qwen3-8B"
+base_model=$BASE_MODEL
 
 # AGENTIC CONFIG
 # env_name=... # from above
 is_multiturn=True
 is_async=True
-max_iter=25
+max_iter=$MAX_ITER
 reward_density=$reward_method
 reward_type="verified"
 reward_manager="agentic_heuristics"
@@ -37,47 +34,39 @@ rollout_name="vllm"
 rollout_mode="async"
 
 # ALGORITHM CONFIG
-adv_estimator=grpo_multi
-rollout_n=4
+adv_estimator=grpo
+rollout_n=$ROLLOUT_N
 
-use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
+use_kl_loss=True                                                                                                                                                                                                                                                                                    # Whether to use KL loss in objective. True for GRPO.
 use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
 
 # TRAINING CONFIG
-rollout_temp=0.7
-val_rollout_temp=0.7
+rollout_temp=$TEMP
+val_rollout_temp=$TEMP
 train_batch_size=16
 ppo_mini_batch_size=16
 max_num_batched_tokens=16384
-gpu_memory_utilization=0.7
+gpu_memory_utilization=$GPU_MEMORY_UTILIZATION
+num_workers=$NUM_WORKERS
 max_prompt_length=6144
 max_response_length=6144
 actor_lr=1e-6
 nnodes=1
-num_epochs=20
-save_freq=15 # per steps
-test_freq=5 # per steps
+num_epochs=$NUM_EPOCHS
+save_freq=$SAVE_FREQ # per steps
+test_freq=$TEST_FREQ # per steps
 
 # PROJECT CONFIG
-project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="test-swegym" # TODO (optional). WandB experiment name.
-save_hf_repo_id="your-hf-repo-id" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+project_name=$PROJECT_NAME # TODO (optional). WandB project name.
+experiment_name=$EXPERIMENT_NAME # TODO (optional). WandB experiment name.
+save_hf_repo_id=$SAVE_HF_REPO_ID # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
-
-# Step 1: Process RL data
-# echo "Processing multiturn RL data for tasks ${env_name}-${task_prefix} ${task_id_start}-${task_id_end}"
-# python3 -m meow_tea_train.agentic_utils.data_process.rl_data_processor \
-#     --env_name "$env_name" \
-#     --task_prefix "$task_prefix" \
-#     --instance_id_range "$instance_id_start" "$instance_id_end" \
-#     --hf_data_repo "$hf_data_repo" \
-#     --hf_instances_dir "$hf_instances_dir" \
-#     --hf_train_data_dir "$hf_train_data_dir" \
-#     --local_instances_dir "$local_instances_dir" \
-#     --local_train_data_dir "$local_train_data_dir" \
-#     --local_parquet_dir "$local_parquet_dir" \
-#     --reward_method "$reward_method"
+# Step 1: Download RL parquet
+echo "Downloading multiturn RL data for swe-gym tasks..."
+hf download $hf_data_repo --include="${hf_train_data_dir}/*" --local-dir="$local_parquet_dir"
+hf download $hf_data_repo --include="${hf_val_data_dir}/*" --local-dir="$local_parquet_dir"
+hf download $hf_data_repo --include="swegym/sweagent_config.yaml" --local-dir="local/"
 
 # Step 2: Load models
 echo "Loading models..."
@@ -121,16 +110,14 @@ fi
 echo "Starting RL training..."
 
 python3 -m meow_tea_train.verl.trainer.main_ppo \
-    data.train_files="$local_parquet_dir/train.parquet" \
-    data.val_files="$local_parquet_dir/valid.parquet" \
+    data.train_files=$train_parquet \
+    data.val_files=$val_parquet \
     data.return_raw_chat=True \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.train_batch_size=$train_batch_size \
     algorithm.adv_estimator=$adv_estimator \
-    algorithm.gamma=$gamma \
     algorithm.use_kl_in_reward=$use_kl_in_reward \
-    algorithm.kl_ctrl.kl_coef=$kl_coef \
     agentic.environment.name=$env_name \
     agentic.environment.is_multiturn=$is_multiturn \
     agentic.environment.is_async=$is_async \
@@ -154,7 +141,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
     +actor_rollout_ref.rollout.agentic='${agentic}' \
-    actor_rollout_ref.rollout.agent.num_workers=4 \
+    actor_rollout_ref.rollout.agent.num_workers=$num_workers \
     actor_rollout_ref.rollout.agent.default_agent_loop="swe_agent" \
     actor_rollout_ref.rollout.agent.agent_loop_config_path="agent_loop_configs.yaml" \
     actor_rollout_ref.rollout.temperature=$rollout_temp \
