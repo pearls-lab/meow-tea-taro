@@ -1,0 +1,11 @@
+# SWE-Agent configuration
+- name: swe_agent
+  _target_: meow_tea_train.agentic_menu.async_sweagent.agent_loop.SWEAgentLoop
+  # Use OmegaConf interpolation to read from command-line args
+  sweagent_config_path: local/sweagent_config.yaml
+  trajs_save_dir: local/trajectories
+
+# Add more agent loops here if needed
+# - name: another_agent
+#   _target_: path.to.AnotherAgentLoop
+#   some_param: value

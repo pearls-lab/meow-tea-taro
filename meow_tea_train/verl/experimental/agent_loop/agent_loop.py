@@ -366,9 +366,7 @@ class AgentLoopWorkerBase:
         outputs = await asyncio.gather(*tasks)
 
         output = self._postprocess(outputs)
-        with open("debug_output.log", "a") as f:
-            f.write(str(output))
-            f.write("\n")
+
         return output
 
     async def _run_agent_loop(
