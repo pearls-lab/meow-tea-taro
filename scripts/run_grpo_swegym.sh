@@ -64,9 +64,9 @@ resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB 
 
 # Step 1: Download RL parquet
 echo "Downloading multiturn RL data for swe-gym tasks..."
-hf download $hf_data_repo --include="${hf_train_data_dir}/*" --local-dir="$local_parquet_dir"
-hf download $hf_data_repo --include="${hf_val_data_dir}/*" --local-dir="$local_parquet_dir"
-hf download $hf_data_repo --include="swegym/sweagent_config.yaml" --local-dir="local/"
+hf download $hf_data_repo --include="${hf_train_data_dir}/*" --local-dir="$local_parquet_dir" --repo-type dataset
+hf download $hf_data_repo --include="${hf_val_data_dir}/*" --local-dir="$local_parquet_dir" --repo-type dataset
+hf download $hf_data_repo --include="swegym/sweagent_config.yaml" --local-dir="local/" --repo-type dataset
 
 # Step 2: Load models
 echo "Loading models..."
