@@ -32,23 +32,23 @@ rollout_name="vllm_agentic"
 rollout_mode=$( [ "$is_async" = "True" ] && echo "async" || echo "sync" ) # Set 'async' if is_async=True, else 'sync'.
 
 # ALGORITHM CONFIG
-adv_estimator=reinforce_plus_plus
-rollout_n=8
+adv_estimator=grpo
+rollout_n=4
 
-use_kl_loss=False # Whether to use KL loss in objective. True for GRPO.
-use_kl_in_reward=True # Whether to use KL divergence in reward calculation.
+use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
+use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
 kl_coef=0.001
 
 # TRAINING CONFIG
 rollout_temp=0.7
-val_rollout_temp=0.4
-train_batch_size=512
-ppo_mini_batch_size=512
+val_rollout_temp=0.7
+train_batch_size=256
+ppo_mini_batch_size=256
 max_num_batched_tokens=8192
 gpu_memory_utilization=0.75
 max_prompt_length=3072
 max_response_length=3072
-actor_lr=3e-6
+actor_lr=1e-6
 nnodes=1
 num_epochs=100
 save_freq=40 # per steps
@@ -56,13 +56,13 @@ test_freq=5 # per steps
 
 # PROJECT CONFIG
 project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="textworld-w2-o3-q4-qwen-1-5b-reinforce-pp" # TODO (optional). WandB experiment name.
-save_hf_repo_id="ruiyiwang/textworld-w2-o3-q4-qwen-1-5b-reinforce-pp-2" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+experiment_name="textworld-w2-o3-q4-qwen-1-5b-grpo" # TODO (optional). WandB experiment name.
+save_hf_repo_id="ruiyiwang/textworld-w2-o3-q4-qwen-1-5b-grpo" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
 
 # Step 1: Process RL data
-echo "Processing multiturn RL data for tasks ${env_name}-${task_prefix} ${task_id_start}-${task_id_end}"
+echo "Processing multiturn RL data for tasks ${env_name}-${task_prefix} ${instance_id_start}-${instance_id_end}"
 python3 -m meow_tea_train.agentic_utils.data_process.rl_data_processor \
     --env_name "$env_name" \
     --task_prefix "$task_prefix" \
@@ -149,7 +149,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.rollout.temperature=$rollout_temp \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=$gpu_memory_utilization \
-    actor_rollout_ref.rollout.n=1 \
+    actor_rollout_ref.rollout.n=$rollout_n \
     actor_rollout_ref.rollout.max_num_batched_tokens=$max_num_batched_tokens \
     actor_rollout_ref.rollout.val_kwargs.temperature=$val_rollout_temp \
     reward_model.reward_manager=$reward_manager \
@@ -158,7 +158,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     trainer.experiment_name=$experiment_name \
     trainer.validation_data_dir="local/val_results" \
     trainer.nnodes=$nnodes \
-    trainer.n_gpus_per_node=$rollout_n \
+    trainer.n_gpus_per_node=8 \
     trainer.val_before_train=True \
     trainer.hf_kwargs.save_hf_repo_id=$save_hf_repo_id \
     trainer.hf_kwargs.resume_wandb_logs=$resume_wandb_logs \
