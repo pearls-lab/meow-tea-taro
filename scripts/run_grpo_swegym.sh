@@ -10,10 +10,10 @@ export HYDRA_FULL_ERROR=1
 env_name="swegym"
 hf_data_repo=$HF_DATA_REPO
 hf_train_data_dir=$HF_TRAIN_DATA_DIR
-hf_val_data_dir=$HF_VAL_DATA_DIR
+hf_test_data_dir=$HF_TEST_DATA_DIR
 local_parquet_dir="local/train_parquet"
 train_parquet=$local_parquet_dir/$hf_train_data_dir/$TRAIN_PARQUET_FILE
-val_parquet=$local_parquet_dir/$hf_val_data_dir/$VAL_PARQUET_FILE
+test_parquet=$local_parquet_dir/$hf_test_data_dir/$TEST_PARQUET_FILE
 reward_method="dense"
 
 # MODEL CONFIG
@@ -67,6 +67,7 @@ echo "Downloading multiturn RL data for swe-gym tasks..."
 hf download $hf_data_repo --include="${hf_train_data_dir}/*" --local-dir="$local_parquet_dir" --repo-type dataset
 hf download $hf_data_repo --include="${hf_val_data_dir}/*" --local-dir="$local_parquet_dir" --repo-type dataset
 hf download $hf_data_repo --include="swegym/sweagent_config.yaml" --local-dir="local/" --repo-type dataset
+mv local/swegym/sweagent_config.yaml local/sweagent_config.yaml
 
 # Step 2: Load models
 echo "Loading models..."
@@ -111,7 +112,7 @@ echo "Starting RL training..."
 
 python3 -m meow_tea_train.verl.trainer.main_ppo \
     data.train_files=$train_parquet \
-    data.val_files=$val_parquet \
+    data.val_files=$test_parquet \
     data.return_raw_chat=True \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
