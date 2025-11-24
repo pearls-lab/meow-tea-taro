@@ -12,13 +12,13 @@ hf_train_data_dir="$env_name/$task_prefix/multiturn_rl_data/5000_train_data"
 local_instances_dir="local/$hf_instances_dir"
 local_train_data_dir="local/$hf_train_data_dir"
 local_parquet_dir="local/train_parquet"
-reward_method="dense"
+reward_method="single"
 
 # MODEL CONFIG
 hf_actor_repo_id=""
 hf_actor_model_path=""
 actor_model_path=local/model/actor
-base_model="Qwen/Qwen2.5-1.5B-Instruct"
+base_model="Qwen/Qwen2.5-7B-Instruct"
 
 # AGENTIC CONFIG
 # env_name=... # from above
@@ -55,8 +55,8 @@ test_freq=5 # per steps
 
 # PROJECT CONFIG
 project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="textworld-w2-o3-q4-qwen-1-5b-reinforce-pp" # TODO (optional). WandB experiment name.
-save_hf_repo_id="ruiyiwang/textworld-w2-o3-q4-qwen-1-5b-reinforce-pp" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+experiment_name="textworld-w2-o3-q4-qwen-7b-reinforce-pp" # TODO (optional). WandB experiment name.
+save_hf_repo_id="ruiyiwang/textworld-w2-o3-q4-qwen-7b-reinforce-pp" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
 
