@@ -22,8 +22,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "textworld",
-    "alfworld",
     "swe-rex",
     "ghapi",
     "pydantic-settings",
