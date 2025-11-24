@@ -25,18 +25,18 @@ def upload_val_results_to_hf(config: DictConfig):
         # Create HF repo if not exists
         api = HfApi()
         create_repo(
-            config.trainer.save_hf_repo_id, 
+            config.trainer.hf_kwargs.save_hf_repo_id, 
             repo_type="model",
             exist_ok=True
         )
         # Upload folder
         api.upload_folder(
             folder_path=config.trainer.validation_data_dir,
-            repo_id=config.trainer.save_hf_repo_id,
+            repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
             repo_type="model",
             path_in_repo="val_results"
         )
-        print(f"Uploaded val results {config.trainer.validation_data_dir} to HF repo {config.trainer.save_hf_repo_id}.")
+        print(f"Uploaded val results {config.trainer.validation_data_dir} to HF repo {config.trainer.hf_kwargs.save_hf_repo_id}.")
     except:
         print("Cannot upload val results to HF.")
 
@@ -46,21 +46,32 @@ def upload_ckpt_to_hf(config: DictConfig):
     Upload/Update checkpoints from trainer.default_local_dir to HF repo.
     """
     from huggingface_hub import create_repo, HfApi
+    import os
     try:
         # Create HF repo if not exists
         api = HfApi()
         create_repo(
-            config.trainer.save_hf_repo_id, 
+            config.trainer.hf_kwargs.save_hf_repo_id, 
             repo_type="model",
             exist_ok=True
         )
         # Upload the entire local checkpoint folder
         api.upload_large_folder(
             folder_path=config.trainer.default_local_dir,
-            repo_id=config.trainer.save_hf_repo_id,
+            repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
             repo_type="model",
         )
-        print(f"Uploaded folder {config.trainer.default_local_dir} to HF repo {config.trainer.save_hf_repo_id}.")
+        print(f"Uploaded folder {config.trainer.default_local_dir} to HF repo {config.trainer.hf_kwargs.save_hf_repo_id}.")
+
+        # Upload the local directory
+        if os.path.exists("local"):
+            api.upload_large_folder(
+                folder_path="local",
+                repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
+                repo_type="model",
+                path_in_repo="local"
+            )
+            print(f"Uploaded folder local to HF repo {config.trainer.hf_kwargs.save_hf_repo_id}.")
     except:
         print("Cannot upload checkpoints to HF.")
 
@@ -76,7 +87,7 @@ def download_ckpt_from_hf(config: DictConfig):
         # First, try downloading latest checkpointed iteration from HF
         latest_ckpt_filename = "latest_checkpointed_iteration.txt"
         hf_hub_download(
-            repo_id=config.trainer.save_hf_repo_id,
+            repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
             repo_type="model",
             filename=latest_ckpt_filename,
             local_dir=config.trainer.default_local_dir,
@@ -85,13 +96,13 @@ def download_ckpt_from_hf(config: DictConfig):
         ckpt_iter = open(os.path.join(config.trainer.default_local_dir, latest_ckpt_filename)).readline().strip()
         ckpt_name = f"global_step_{ckpt_iter}"
         snapshot_download(
-            repo_id=config.trainer.save_hf_repo_id,
+            repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
             repo_type="model",
             local_dir=config.trainer.default_local_dir,
             allow_patterns=f"{ckpt_name}/*"
         )
         # self.global_steps = int(ckpt_iter)
-        print(f"Downloaded folder {config.trainer.default_local_dir}/{ckpt_name} from {config.trainer.save_hf_repo_id}.")
+        print(f"Downloaded folder {config.trainer.default_local_dir}/{ckpt_name} from {config.trainer.hf_kwargs.save_hf_repo_id}.")
     except:
         print("Previous checkpoints not found on HF.")
 
@@ -109,7 +120,7 @@ def resume_wandb_logs(config: DictConfig):
     try:
         wandb_run_info_filename = "wandb_run_info.json"
         hf_hub_download(
-            repo_id=config.trainer.save_hf_repo_id,
+            repo_id=config.trainer.hf_kwargs.save_hf_repo_id,
             repo_type="model",
             filename=wandb_run_info_filename,
             local_dir=config.trainer.default_local_dir,
