@@ -37,19 +37,21 @@ rollout_name="vllm"
 rollout_mode="async"
 
 # ALGORITHM CONFIG
-adv_estimator=grpo_multi
+adv_estimator=grpo
 rollout_n=4
+gamma=1.0
 
-use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
+use_kl_loss=True # Whether to use KL loss in objective.
+kl_coef=0.001 # Coefficient for KL
 use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
 
 # TRAINING CONFIG
 rollout_temp=0.7
 val_rollout_temp=0.7
-train_batch_size=16
-ppo_mini_batch_size=16
+train_batch_size=8
+ppo_mini_batch_size=4
 max_num_batched_tokens=16384
-gpu_memory_utilization=0.7
+gpu_memory_utilization=0.8
 max_prompt_length=6144
 max_response_length=6144
 actor_lr=1e-6
@@ -121,8 +123,8 @@ fi
 echo "Starting RL training..."
 
 python3 -m meow_tea_train.verl.trainer.main_ppo \
-    data.train_files="$local_parquet_dir/train.parquet" \
-    data.val_files="$local_parquet_dir/valid.parquet" \
+    data.train_files="$local_parquet_dir/validation.parquet" \
+    data.val_files="$local_parquet_dir/validation.parquet" \
     data.return_raw_chat=True \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
@@ -150,6 +152,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.entropy_coeff=0.0 \
     actor_rollout_ref.actor.use_kl_loss=$use_kl_loss \
+    actor_rollout_ref.actor.kl_loss_type="low_var_kl" \
     actor_rollout_ref.actor.optim.lr=$actor_lr \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
@@ -171,7 +174,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     trainer.validation_data_dir="local/val_results" \
     trainer.nnodes=$nnodes \
     trainer.n_gpus_per_node=8 \
-    trainer.val_before_train=True \
+    trainer.val_before_train=False \
     trainer.hf_kwargs.save_hf_repo_id=$save_hf_repo_id \
     trainer.hf_kwargs.resume_wandb_logs=$resume_wandb_logs \
     trainer.resume_mode=auto \
