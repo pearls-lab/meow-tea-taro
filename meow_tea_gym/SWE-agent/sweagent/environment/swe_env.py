@@ -253,7 +253,7 @@ class SWEEnv:
         startup_sources = getattr(self.deployment, "startup_sources", None) or ["/root/.bashrc"]
         asyncio.run(
             self.deployment.runtime.create_session(
-                CreateBashSessionRequest(startup_source=startup_sources, startup_timeout=30)
+                CreateBashSessionRequest(startup_source=startup_sources, startup_timeout=10)
             )
         )
         self.set_env_variables({"LANG":"C.UTF-8","LC_ALL":"C.UTF-8","PIP_PROGRESS_BAR":"off","PAGER":"cat"})
