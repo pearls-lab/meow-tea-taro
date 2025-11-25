@@ -31,18 +31,6 @@ from verl.utils.transferqueue_utils import tqbridge
 from verl.workers.reward_manager import get_reward_manager_cls
 from verl.workers.reward_manager.abstract import AbstractRewardManager, RawRewardFn
 
-# NOTE from meow-tea: Import custom reward managers to ensure they are registered
-try:
-    from meow_tea_train.agentic_utils.reward_manager.agentic_verified import AgenticVerifiedRewardManager
-except ImportError as e:
-    print(f"Failed to import AgenticVerifiedRewardManager: {e}")
-    pass
-try:
-    from meow_tea_train.agentic_utils.reward_manager.agentic_heuristics import AgenticHeuristicsRewardManager
-except ImportError as e:
-    print(f"Failed to import AgenticHeuristicsRewardManager: {e}")
-    pass
-
 
 def _call_with_kwargs(raw_fn, extra_kwargs, *args, **kwargs):
     """Calls `raw_fn` by merging `extra_kwargs` into call-time `kwargs`, with `extra_kwargs` taking precedence.
@@ -217,3 +205,17 @@ def compute_reward_async(data: DataProto, config=None, tokenizer=None, reward_fn
         )
 
     return compute_reward(data, reward_fn)
+
+
+# NOTE from meow-tea: Import custom reward managers to ensure they are registered
+try:
+    from meow_tea_train.agentic_utils.reward_manager.agentic_verified import AgenticVerifiedRewardManager
+except ImportError as e:
+    print(f"Failed to import AgenticVerifiedRewardManager: {e}")
+    pass
+try:
+    from meow_tea_train.agentic_utils.reward_manager.agentic_heuristics import AgenticHeuristicsRewardManager
+    print("Successfully imported AgenticHeuristicsRewardManager")
+except ImportError as e:
+    print(f"Failed to import AgenticHeuristicsRewardManager: {e}")
+    pass

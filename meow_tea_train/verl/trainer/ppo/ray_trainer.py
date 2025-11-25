@@ -1178,7 +1178,9 @@ class RayPPOTrainer:
 
                     with marked_timer("reward", timing_raw, color="yellow"):
                         # compute reward model score
+                        # print(f"DEBUG: use_rm={self.use_rm}, rm_scores in batch={ 'rm_scores' in batch.batch.keys() }")
                         if self.use_rm and "rm_scores" not in batch.batch.keys():
+                            # print("DEBUG: Computing RM score via rm_wg")
                             reward_tensor = self.rm_wg.compute_rm_score(batch)
                             batch = batch.union(reward_tensor)
 
@@ -1187,6 +1189,7 @@ class RayPPOTrainer:
                                 data=batch, config=self.config, tokenizer=self.tokenizer
                             )
                         else:
+                            # print("DEBUG: Calling compute_reward synchronously")
                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
 
                     # recompute old_log_probs

@@ -137,8 +137,6 @@ class AgentLoopOutput(BaseModel):
     """Reward score for the trajectory."""
     final_rewards: Optional[float] = None
     """Final reward for the trajectory. Same as reward_score if no intermediate rewards."""
-    interm_rewards: Optional[list[float]] = None
-    """Intermediate rewards for the trajectory."""
     num_turns: int = 0
     """Number of chat turns, including user, assistant, tool."""
     metrics: AgentLoopMetrics
