@@ -48,6 +48,7 @@ kl_loss_coef=0.001
 rollout_temp=0.7
 val_rollout_temp=0.7
 train_batch_size=32       # Number of prompts per batch (must be <= dataset size of 123)
+val_batch_size=16         # Number of prompts per validation batch (dataset has ~30 examples)
 ppo_mini_batch_size=32    # Should equal train_batch_size for GRPO
 max_num_batched_tokens=16384
 gpu_memory_utilization=0.8
@@ -128,6 +129,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.train_batch_size=$train_batch_size \
+    data.val_batch_size=$val_batch_size \
     algorithm.adv_estimator=$adv_estimator \
     algorithm.gamma=$gamma \
     algorithm.use_kl_in_reward=$use_kl_in_reward \
