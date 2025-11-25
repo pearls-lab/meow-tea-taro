@@ -34,17 +34,19 @@ rollout_name="vllm"
 rollout_mode="async"
 
 # ALGORITHM CONFIG
-adv_estimator=grpo
+adv_estimator=$ADV_ESTIMATOR
 rollout_n=$ROLLOUT_N
+num_workers=$NUM_WORKERS
 
 use_kl_loss=True                                                                                                                                                                                                                                                                                    # Whether to use KL loss in objective. True for GRPO.
 use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
+kl_loss_coef=$KL_LOSS_COEF
 
 # TRAINING CONFIG
 rollout_temp=$TEMP
 val_rollout_temp=$TEMP
-train_batch_size=16
-ppo_mini_batch_size=16
+train_batch_size=$TRAIN_BATCH_SIZE       # Number of prompts per batch (must be <= dataset size)
+ppo_mini_batch_size=$PPO_MINI_BATCH_SIZE
 max_num_batched_tokens=16384
 gpu_memory_utilization=$GPU_MEMORY_UTILIZATION
 num_workers=$NUM_WORKERS
@@ -138,6 +140,8 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.entropy_coeff=0.0 \
     actor_rollout_ref.actor.use_kl_loss=$use_kl_loss \
+    actor_rollout_ref.actor.kl_loss_coef=$kl_loss_coef \
+    actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.optim.lr=$actor_lr \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
