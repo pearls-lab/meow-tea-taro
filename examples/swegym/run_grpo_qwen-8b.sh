@@ -39,6 +39,7 @@ rollout_mode="async"
 # ALGORITHM CONFIG
 adv_estimator=grpo
 rollout_n=4
+num_workers=8
 
 use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
 use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
@@ -159,7 +160,7 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
     +actor_rollout_ref.rollout.agentic='${agentic}' \
-    actor_rollout_ref.rollout.agent.num_workers=6 \
+    actor_rollout_ref.rollout.agent.num_workers=$num_workers \
     actor_rollout_ref.rollout.agent.default_agent_loop="swe_agent" \
     actor_rollout_ref.rollout.agent.agent_loop_config_path="agent_loop_configs.yaml" \
     actor_rollout_ref.rollout.temperature=$rollout_temp \
