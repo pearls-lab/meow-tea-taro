@@ -320,11 +320,26 @@ def compute_grpo_outcome_advantage(
                 id2std[idx] = torch.std(scores_tensor)
             else:
                 raise ValueError(f"no score in prompt index: {idx}")
+        
+        # Debug logging
+        with open("debug.log", "a") as f:
+            f.write(f"\n=== GRPO Advantage Computation ===\n")
+            f.write(f"Batch size: {bsz}, Unique groups: {len(id2score)}\n")
+            f.write(f"Raw scores (sum of token_level_rewards): {scores.tolist()}\n")
+            for idx in id2score:
+                f.write(f"Group {idx}: scores={[s.item() for s in id2score[idx]]}, mean={id2mean[idx].item():.4f}, std={id2std[idx].item():.4f}\n")
+        
         for i in range(bsz):
             if norm_adv_by_std_in_grpo:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
+        
+        # Debug logging after normalization
+        with open("debug.log", "a") as f:
+            f.write(f"Normalized advantages: {scores.tolist()}\n")
+            f.write(f"Has NaN: {torch.isnan(scores).any().item()}, Has Inf: {torch.isinf(scores).any().item()}\n")
+        
         scores = scores.unsqueeze(-1) * response_mask
 
     return scores, scores
@@ -349,10 +364,25 @@ def compute_grpo_vectorized_outcome_advantage(
         scores = token_level_rewards.sum(dim=-1)
         g = as_torch_index(index, device=scores.device)
         mean_g, std_g, _ = group_mean_std(scores, g, eps=epsilon)
+        
+        # Debug logging
+        with open("debug.log", "a") as f:
+            f.write(f"\n=== GRPO Vectorized Advantage Computation ===\n")
+            f.write(f"Batch size: {scores.shape[0]}, Unique groups: {mean_g.shape[0]}\n")
+            f.write(f"Raw scores: {scores.tolist()}\n")
+            f.write(f"Group means: {mean_g.tolist()}\n")
+            f.write(f"Group stds: {std_g.tolist()}\n")
+        
         if norm_adv_by_std_in_grpo:
             scalars = (scores - mean_g[g]) / (std_g[g] + epsilon)
         else:
             scalars = scores - mean_g[g]
+        
+        # Debug logging after normalization
+        with open("debug.log", "a") as f:
+            f.write(f"Normalized advantages: {scalars.tolist()}\n")
+            f.write(f"Has NaN: {torch.isnan(scalars).any().item()}, Has Inf: {torch.isinf(scalars).any().item()}\n")
+        
         advantages = scalars.unsqueeze(-1) * response_mask
         return advantages, advantages
 
@@ -493,12 +523,27 @@ def compute_grpo_multi_outcome_advantage(
             else:
                 id2mean[idx] = stats["weighted_sum"] / (stats["total_len"] + epsilon)
 
+        # Debug logging
+        with open("debug.log", "a") as f:
+            f.write(f"\n=== GRPO-Multi Advantage Computation ===\n")
+            f.write(f"Batch size: {bsz}, Unique groups: {len(id2stats)}\n")
+            f.write(f"Total returns (R_i): {total_return.tolist()}\n")
+            f.write(f"Lengths (L_i): {lengths.tolist()}\n")
+            for idx, stats in id2stats.items():
+                f.write(f"Group {idx}: weighted_sum={stats['weighted_sum']}, total_len={stats['total_len']}, mean={id2mean[idx]}\n")
+                f.write(f"  raw_returns: {stats['raw_returns'].tolist()}\n")
+
         # 5. Compute advantages
         advantages = torch.zeros_like(total_return)
         for i in range(bsz):
             idx = index[i]
             mu = id2mean[idx]
             advantages[i] = total_return[i] - mu
+
+        # Debug logging after advantage computation
+        with open("debug.log", "a") as f:
+            f.write(f"Scalar advantages (before mask): {advantages.tolist()}\n")
+            f.write(f"Has NaN: {torch.isnan(advantages).any().item()}, Has Inf: {torch.isinf(advantages).any().item()}\n")
 
         # 6. Broadcast and Mask
         # Expand scalar advantage (bs,) -> (bs, seq_len)

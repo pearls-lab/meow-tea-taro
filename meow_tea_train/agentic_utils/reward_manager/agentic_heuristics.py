@@ -15,6 +15,7 @@
 
 
 from collections import defaultdict
+import math
 
 import torch
 
@@ -58,6 +59,7 @@ class AgenticHeuristicsRewardManager:
         reward_extra_info = defaultdict(list)
 
         already_print_data_sources = {}
+        response_length = reward_tensor.shape[1]  # Get the response tensor length
 
         for i in range(len(data)):
             data_item = data[i]  # DataProtoItem
@@ -79,10 +81,28 @@ class AgenticHeuristicsRewardManager:
 
             # we already compute final/intermediate rewards during multiturn rollout
             final_score = data_item.non_tensor_batch["final_rewards"]
-            # print(f"DEBUG: Item {i} - final_score: {final_score}, valid_response_length: {valid_response_length}")
-
-            # Convert numpy types to Python float for torch tensor assignment
-            reward_tensor[i, valid_response_length - 1] = float(final_score)
+            
+            # Convert to int for indexing
+            valid_response_length_int = int(valid_response_length)
+            
+            # Convert final_score to float and check for NaN
+            final_score_float = float(final_score)
+            if math.isnan(final_score_float):
+                with open("debug.log", "a") as f:
+                    f.write(f"WARNING: Item {i} has NaN final_score. Setting to 0.0.\n")
+                final_score_float = 0.0
+            
+            # Debug logging
+            with open("debug.log", "a") as f:
+                f.write(f"Item {i}: final_score={final_score_float}, valid_response_length={valid_response_length_int}, response_length={response_length}\n")
+            
+            # Bounds check and assign reward at the last valid token position
+            if valid_response_length_int > 0 and valid_response_length_int <= response_length:
+                reward_idx = valid_response_length_int - 1
+                reward_tensor[i, reward_idx] = final_score_float
+            else:
+                with open("debug.log", "a") as f:
+                    f.write(f"WARNING: Item {i} has invalid valid_response_length={valid_response_length_int}, response_length={response_length}. Skipping reward assignment.\n")
             
             # data_source = data_item.non_tensor_batch[self.reward_fn_key]
             data_source = "sweagent_tasks"
