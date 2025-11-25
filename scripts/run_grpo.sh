@@ -2,29 +2,32 @@ set -x
 export HYDRA_FULL_ERROR=1
 
 # DATA/TASK CONFIG
-env_name="textworld"
-task_prefix="w2-o3-q4"
-instance_id_start=50001
-instance_id_end=55000
-hf_data_repo="PEARLS-Lab/meow-tea-taro-dataset"
-hf_instances_dir="$env_name/$task_prefix/instances"
-hf_train_data_dir="$env_name/$task_prefix/multiturn_rl_data/5000_train_data"
+env_name=$ENV_NAME
+task_prefix=$TASK_PREFIX
+instance_id_start=$INSTANCE_ID_START
+instance_id_end=$INSTANCE_ID_END
+hf_data_repo=$HF_DATA_REPO
+hf_instances_dir=$HF_INSTANCES_DIR
+hf_train_data_dir=$HF_TRAIN_DATA_DIR
 local_instances_dir="local/$hf_instances_dir"
 local_train_data_dir="local/$hf_train_data_dir"
 local_parquet_dir="local/train_parquet"
-reward_method="single"
+reward_method=$REWARD_METHOD
 
 # MODEL CONFIG
-hf_actor_repo_id=""
-hf_actor_model_path=""
+hf_actor_repo_id=$HF_ACTOR_REPO_ID
+hf_actor_model_path=$HF_ACTOR_MODEL_PATH
+hf_critic_repo_id=$HF_CRITIC_REPO_ID
+hf_critic_model_path=$HF_CRITIC_MODEL_PATH
 actor_model_path=local/model/actor
-base_model="Qwen/Qwen2.5-1.5B-Instruct"
+critic_model_path=local/model/critic
+base_model=$BASE_MODEL
 
 # AGENTIC CONFIG
 # env_name=... # from above
 is_multiturn=True
 is_async=False
-max_iter=12
+max_iter=$MAX_ITER
 reward_density=$reward_method
 reward_type="verified"
 reward_manager="agentic_verified"
@@ -33,33 +36,32 @@ rollout_mode=$( [ "$is_async" = "True" ] && echo "async" || echo "sync" ) # Set 
 
 # ALGORITHM CONFIG
 adv_estimator=grpo
-rollout_n=4
+rollout_n=$ROLLOUT_N
 
 use_kl_loss=True # Whether to use KL loss in objective. True for GRPO.
 use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
-kl_coef=0.001
+kl_loss_coef=$KL_LOSS_COEF
 
 # TRAINING CONFIG
-rollout_temp=0.7
-val_rollout_temp=0.7
+rollout_temp=$ROLLOUT_TEMP
+val_rollout_temp=$VAL_ROLLOUT_TEMP
 train_batch_size=256
 ppo_mini_batch_size=256
 max_num_batched_tokens=8192
-gpu_memory_utilization=0.75
-max_prompt_length=3072
-max_response_length=3072
-actor_lr=1e-6
+gpu_memory_utilization=$GPU_MEMORY_UTILIZATION
+max_prompt_length=$MAX_PROMPT_LENGTH
+max_response_length=$MAX_RESPONSE_LENGTH
+actor_lr=$ACTOR_LR
 nnodes=1
-num_epochs=100
-save_freq=40 # per steps
-test_freq=5 # per steps
+num_epochs=$NUM_EPOCHS
+save_freq=$SAVE_FREQ # per steps
+test_freq=$TEST_FREQ # per steps
 
 # PROJECT CONFIG
-project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="textworld-w2-o3-q4-qwen-1-5b-grpo" # TODO (optional). WandB experiment name.
-save_hf_repo_id="ruiyiwang/textworld-w2-o3-q4-qwen-1-5b-grpo" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+project_name=$PROJECT_NAME # TODO (optional). WandB project name.
+experiment_name=$EXPERIMENT_NAME # TODO (optional). WandB experiment name.
+save_hf_repo_id=$SAVE_HF_REPO_ID # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
-
 
 # Step 1: Process RL data
 echo "Processing multiturn RL data for tasks ${env_name}-${task_prefix} ${instance_id_start}-${instance_id_end}"
@@ -142,6 +144,8 @@ python3 -m meow_tea_train.verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.entropy_coeff=0.0 \
     actor_rollout_ref.actor.use_kl_loss=$use_kl_loss \
+    actor_rollout_ref.actor.kl_loss_coef=$kl_loss_coef \
+    actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.optim.lr=$actor_lr \
     actor_rollout_ref.rollout.name=$rollout_name \
     actor_rollout_ref.rollout.mode=$rollout_mode \
