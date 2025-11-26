@@ -75,15 +75,32 @@ def get_ppo_datapoint(trajectory: List[str], objective: str) -> Dict[str, str]:
     }
 
 
-def get_sft_datapoint(trajectory: List[str], objective: str) -> List[Dict[str, str]]:
+def get_sft_datapoint(trajectory: List[str], objective: str) -> List[List[Dict[str, str]]]:
+    """
+    Returns a list of message lists, each building on the previous:
+    - Item 1: [user, assistant]
+    - Item 2: [user, assistant, user, assistant]
+    - Item 3: [user, assistant, user, assistant, user, assistant]
+    - etc.
+    """
+    all_messages = []
+    current_messages = []
+    
     for i in range(len(trajectory) // 2):
-        messages = []
-        messages.append({
+        # Add user message with current state
+        current_messages.append({
             "role": "user",
-            "content": format_multiturn_prompt(input_traj=trajectory[:1], objective=objective)
+            "content": format_multiturn_prompt(input_traj=trajectory[2*i:2*i+1], objective=objective)
         })
-        messages.extend(format_sft_messages(trajectory=trajectory[1:2*i+2]))
-        return messages
+        # Add assistant response (the action)
+        current_messages.append({
+            "role": "assistant",
+            "content": trajectory[2*i+1]
+        })
+        # Append a copy of the current conversation
+        all_messages.append(list(current_messages))
+    
+    return all_messages
 
 
 def generate_multiturn_data(env_name: str, instance_dir: str, instance_start: int, instance_end: int, task_prefix: str, train_type: str, **kwargs):
@@ -105,7 +122,7 @@ def generate_multiturn_data(env_name: str, instance_dir: str, instance_start: in
             datapoints.append(ppo_datapoint)
         elif train_type == "sft":
             sft_datapoint = get_sft_datapoint(trajectory=trajectory, objective=objective)
-            datapoints.append(sft_datapoint)
+            datapoints += sft_datapoint
     
     return datapoints
 
