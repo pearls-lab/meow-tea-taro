@@ -16,9 +16,9 @@ reward_method="dense"
 
 # MODEL CONFIG
 hf_actor_repo_id="ruiyiwang/alfworld-qwen-7b-sft-admissible"
-hf_actor_model_path="global_step_524"
+hf_actor_model_path="global_step_250"
 hf_critic_repo_id="ruiyiwang/alfworld-qwen-7b-sft-admissible"
-hf_critic_model_path="global_step_524"
+hf_critic_model_path="global_step_250"
 actor_model_path=local/model/actor
 critic_model_path=local/model/critic
 base_model="Qwen/Qwen2.5-7B-Instruct"
@@ -27,7 +27,7 @@ base_model="Qwen/Qwen2.5-7B-Instruct"
 # env_name=... # from above
 is_multiturn=True
 is_async=False
-max_iter=24
+max_iter=16
 reward_density=$reward_method
 reward_type="verified"
 reward_manager="agentic_verified"
@@ -39,19 +39,19 @@ adv_estimator=gae
 gamma=1.0
 
 use_kl_loss=False # Whether to use KL loss in objective. True for GRPO.
-use_kl_in_reward=True # Whether to use KL divergence in reward calculation.
+use_kl_in_reward=False # Whether to use KL divergence in reward calculation.
 kl_coef=0.01
 clip_ratio=0.2
 
 # TRAINING CONFIG
 rollout_temp=0.7
-val_rollout_temp=0.4
+val_rollout_temp=1.0
 train_batch_size=256
 ppo_mini_batch_size=256
 max_num_batched_tokens=16384
 gpu_memory_utilization=0.65
-max_prompt_length=8192
-max_response_length=8192
+max_prompt_length=6144
+max_response_length=6144
 actor_lr=1e-6
 critic_lr=1e-5
 nnodes=1
@@ -61,8 +61,8 @@ test_freq=5 # per steps
 
 # PROJECT CONFIG
 project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="alfworld-qwen-7b-admissible-ppo-sft-8k" # TODO (optional). WandB experiment name.
-save_hf_repo_id="ruiyiwang/alfworld-qwen-7b-admissible-ppo-sft-8k" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+experiment_name="alfworld-qwen-7b-admissible-ppo-sft-8k-epoch1" # TODO (optional). WandB experiment name.
+save_hf_repo_id="ruiyiwang/alfworld-qwen-7b-admissible-ppo-sft-8k-epoch1" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
 
