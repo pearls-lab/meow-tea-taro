@@ -5,7 +5,7 @@ export HYDRA_FULL_ERROR=1
 env_name="alfworld"
 task_prefix="text_based"
 hf_data_repo="PEARLS-Lab/meow-tea-taro-dataset"
-hf_train_data_dir="$env_name/$task_prefix/multiturn_sft_data/100_data"
+hf_train_data_dir="$env_name/$task_prefix/multiturn_sft_data_admissible"
 local_train_data_dir="local/${hf_train_data_dir}"
 local_parquet_dir="local/train_parquet"
 
@@ -13,17 +13,17 @@ local_parquet_dir="local/train_parquet"
 base_model=Qwen/Qwen2.5-7B-Instruct
 train_batch_size=8
 micro_batch_size_per_gpu=1
-max_length=4096
+max_length=8192
 nproc_per_node=8
 save_freq=40 # per steps
 test_freq=5 # per steps
-total_epochs=1
+total_epochs=2
 
 # PROJECT CONFIG
-project_name="" # TODO (optional). WandB project name.
-experiment_name="" # TODO (optional). WandB experiment name.
+project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
+experiment_name="alfworld-qwen-7b-admissible-sft" # TODO (optional). WandB experiment name.
 save_path=checkpoints # The local path to save checkpoints.
-save_hf_repo_id="your-hf-repo-id" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+save_hf_repo_id="ruiyiwang/alfworld-qwen-7b-admissible-sft" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 
 
 # Step 1: Process RL data
