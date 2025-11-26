@@ -22,6 +22,8 @@ classifiers = [
 ]
 
 dependencies = [
+    "textworld",
+    "alfworld"
 ]
 
 [project.optional-dependencies]
