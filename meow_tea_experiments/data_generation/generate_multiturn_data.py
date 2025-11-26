@@ -88,10 +88,16 @@ def get_sft_datapoint(trajectory: List[str], objective: str) -> List[List[Dict[s
     
     for i in range(len(trajectory) // 2):
         # Add user message with current state
-        current_messages.append({
-            "role": "user",
-            "content": format_multiturn_prompt(input_traj=trajectory[2*i:2*i+1], objective=objective)
-        })
+        if i == 0:
+            current_messages.append({
+                "role": "user",
+                "content": format_multiturn_prompt(input_traj=trajectory[2*i:2*i+1], objective=objective)
+            })
+        else:
+            current_messages.append({
+                "role": "user",
+                "content": f"current state: {trajectory[2*i]}\n\nyour action: "
+            })
         # Add assistant response (the action)
         current_messages.append({
             "role": "assistant",
