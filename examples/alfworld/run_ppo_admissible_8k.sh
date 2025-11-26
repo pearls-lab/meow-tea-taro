@@ -48,10 +48,10 @@ rollout_temp=0.7
 val_rollout_temp=0.4
 train_batch_size=256
 ppo_mini_batch_size=256
-max_num_batched_tokens=8192
+max_num_batched_tokens=16384
 gpu_memory_utilization=0.65
-max_prompt_length=4096
-max_response_length=4096
+max_prompt_length=8192
+max_response_length=8192
 actor_lr=1e-6
 critic_lr=1e-5
 nnodes=1
@@ -61,8 +61,8 @@ test_freq=5 # per steps
 
 # PROJECT CONFIG
 project_name="meow-tea-taro-experiments" # TODO (optional). WandB project name.
-experiment_name="alfworld-qwen-7b-admissible-ppo-cold-start" # TODO (optional). WandB experiment name.
-save_hf_repo_id="ruiyiwang/alfworld-qwen-7b-admissible-ppo-cold-start" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
+experiment_name="alfworld-qwen-7b-admissible-ppo-cold-start-8k" # TODO (optional). WandB experiment name.
+save_hf_repo_id="ruiyiwang/alfworld-qwen-7b-admissible-ppo-cold-start-8k" # TODO (optional). HF repo id to save the trained model. If empty, do not save.
 resume_wandb_logs=True # TODO (optional, default=True). Whether to resume WandB logs if "experiment_name" exists.
 
 
