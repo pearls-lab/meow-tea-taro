@@ -187,11 +187,14 @@ class AlfWorldEnv(TextWorldEnvBase):
         )
         self.game_agent.reset(self.env)
         # Get the initial observation text
-        self.init_state = self.env.reset()[1]["feedback"]
+        obs, info = self.env.reset()
+        self.init_state = info["feedback"] + '\n' + "Your admissible actions are: " + ';'.join(info["admissible_commands"])
+        # self.init_state = self.env.reset()[1]["feedback"]
 
     
     def one_step(self, command: str):
         obs, reward, done, extras = self._safe_step(command)
+        obs = obs + '\n' + "Your admissible actions are: " + ';'.join(extras["admissible_commands"])
         return obs, done, reward
 
 
