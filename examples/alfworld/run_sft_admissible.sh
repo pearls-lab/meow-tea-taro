@@ -15,7 +15,7 @@ train_batch_size=8
 micro_batch_size_per_gpu=1
 max_length=8192
 nproc_per_node=8
-save_freq=200 # per steps
+save_freq=50 # per steps
 test_freq=-1 # per steps
 total_epochs=2
 
