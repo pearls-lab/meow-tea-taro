@@ -94,7 +94,7 @@ Run a quick example of multi-turn PPO on TextWorld tasks using Qwen2.5-0.5B-Inst
 ```bash
 sh examples/textworld/run_ppo_qwen-0.5b.sh
 ```
-You should be able to see the training curve like this: [wandb log](https://api.wandb.ai/links/pearls-lab/wurzotla).
+You should be able to see the training curve like this: [wandb log](https://api.wandb.ai/links/pearls-lab/s7ms0opk).
 
 
 Now you are ready to cook your RL dishes! Refer to [**the meow-tea-taro documentation**](https://meow-tea-taro.readthedocs.io/en/latest/index.html) for detailed environment, policy and reward configuration tutorials.
